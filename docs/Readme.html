@@ -1,0 +1,290 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+
+  <meta content="text/html; charset=UTF-8" http-equiv="content-type" />
+  <title>mod_xsendfile</title>
+
+
+  <meta content="Nils Maier" name="author" />
+
+  <style media="all" type="text/css">
+body { width: 80ex;
+font-family: sans-serif;
+}
+h1, h2, h3, h4, h5, h6 { padding: 0.3em 0.2em 0.3em 0.7em;
+color: white;
+font-size: larger;
+background-color: rgb(85, 118, 151);
+margin-bottom: 12pt;
+margin-top: 8pt;
+}
+h1 { font-size: x-large;
+background-color: rgb(64, 88, 113);
+}
+h3 { font-size: medium;
+background-color: rgb(229, 236, 243);
+color: rgb(102, 102, 102);
+}
+p, li { margin-top: 4pt;
+margin-bottom: 6pt;
+}
+.code { border: 1px solid gray;
+padding: 2pt;
+}
+  </style>
+</head>
+
+
+
+<body>
+
+<h1>mod_xsendfile</h1>
+
+<h2>Overview</h2>
+
+<p>mod_xsendfile is a small Apache2 module that
+processes&nbsp;X-SENDFILE headers registered by the original output
+handler.</p>
+
+<p>If it encounters the presence of such header it will discard
+all output and send the file specified by that header instead using Apache internals
+including all optimizations like caching-headers and sendfile or mmap if configured.</p>
+
+<p>It is useful for processing script-output of e.g. php, perl or
+any cgi.</p>
+
+<h2>Useful?</h2>
+
+<p>Yep, it is useful.</p>
+
+<ul>
+
+	<li>Some applications require checking for special privileges.</li>
+
+	<li>Other have to lookup values first (e.g.. from a DB) in order to correctly process a download request.</li>
+
+	<li>Or store values (download-counters come into mind).</li>
+
+	<li>etc.</li>
+
+</ul>
+
+<h3>Benefits</h3>
+
+<ul>
+
+  <li>Uses apache internals</li>
+
+  <li>Optimal delivery through sendfile and mmap (if available).</li>
+
+  <li>Sets correct cache headers such as Etag and
+If-Modified-Since as if the file was statically served.</li>
+
+  <li>Processes cache headers such as If-None-Match or
+If-Modified-Since.</li>
+
+</ul>
+
+<h2>Download</h2>
+
+<ul>
+
+	<li><code><a href="mod_xsendfile.c">mod_xsendfile.c</a></code></li>
+
+	<li><code>Source tarball: <a href="mod_xsendfile-0.9.tar.gz">mod_xsendfile-0.9.tar.gz</a></code></li>
+	
+	<li><code>Win32 binary: <a href="mod_xsendfile-0.9.bin.zip">mod_xsendfile-0.9.bin.zip</a></code></li>
+
+</ul>
+
+<h2>Installation</h2>
+
+<ol>
+
+  <li>Grab the <a href="mod_xsendfile.c">source</a>.</li>
+
+  <li>Compile and install<br />
+
+    <code>apxs -cia mod_xsendfile.c</code></li>
+
+  <li>Restart apache</li>
+
+  <li>That's all.</li>
+
+</ol>
+
+<h2>Configuration</h2>
+
+<p>Two flags, that all folks ;)</p>
+
+<h3>XSendFile</h3>
+
+<table style="text-align: left; width: 100%;" class="code" border="0" cellpadding="2" cellspacing="0">
+  <tbody>
+    <tr>
+      <th>Description</th>
+      <td>Enables or disables header processing</td>
+    </tr>
+    <tr>
+      <th>Syntax</th>
+      <td>XSendFile on|off</td>
+    </tr>
+    <tr>
+      <th>Default</th>
+      <td>XSendFile off</td>
+    </tr>
+    <tr>
+      <th>Context</th>
+      <td>server config, virtual host, directory, .htaccess</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Setting <code>XSendFile on</code> will enable
+processing.</p>
+
+<p>The file specified in <code>X-SENDFILE</code>
+header will be sent instead
+of the handler output.</p>
+
+<p>If the response lacks the <code>X-SENDFILE</code>
+header nothing is done.
+</p>
+
+<h3>XSendFileAllowAbove</h3>
+
+<table style="text-align: left; width: 100%;" class="code" border="0" cellpadding="2" cellspacing="0">
+  <tbody>
+    <tr>
+      <th>Description</th>
+      <td>Allows or disallows sending files above Request path</td>
+    </tr>
+    <tr>
+      <th>Syntax</th>
+      <td>XSendFileAllowAbove on|off</td>
+    </tr>
+    <tr>
+      <th>Default</th>
+      <td>XSendFileAllowAbove off</td>
+    </tr>
+    <tr>
+      <th>Context</th>
+      <td>server config, virtual host, directory, .htaccess</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Setting <code>XSendFileAllowAbove on</code> will allow sending files not below
+the path of the Request (this refers to the request URI not the translated path).</p>
+
+
+<h3>Example</h3>
+
+<p><code>.htaccess</code></p>
+
+<p class="code"><code>&lt;Files out.php&gt;<br />
+
+XSendFile on
+<br />
+
+&lt;/Files&gt;</code></p>
+
+<p><code>out.php</code></p>
+
+<p class="code"><code><span style="color: rgb(0, 0, 0);"><span style="color: rgb(0, 0, 187);">&lt;?php<br />
+
+</span><span style="color: rgb(0, 119, 0);">...<br />
+
+if&nbsp;(</span><span style="color: rgb(0, 0, 187);">$user</span><span style="color: rgb(0, 119, 0);">-&gt;</span><span style="color: rgb(0, 0, 187);">isLoggedIn</span><span style="color: rgb(0, 119, 0);">())<br />
+
+{<br />
+
+&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"X-Sendfile:&nbsp;$somefile"</span><span style="color: rgb(0, 119, 0);">);<br />
+
+&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"Content-Type:&nbsp;application/octet-stream"</span><span style="color: rgb(0, 119, 0);">);<br />
+
+&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"Content-Disposition:&nbsp;attachment;&nbsp;file=\"$somefile\""</span><span style="color: rgb(0, 119, 0);">);<br />
+
+&nbsp;&nbsp;&nbsp;&nbsp;exit;<br />
+
+}<br />
+
+</span><span style="color: rgb(0, 0, 187);">?&gt;<br />
+
+</span>&lt;h1&gt;Permission&nbsp;denied&lt;/h1&gt;<br />
+
+&lt;p&gt;Login&nbsp;first!&lt;/p&gt;</span></code></p>
+
+<h2>Limitations / Issues / Security considerations</h2>
+
+<ul>
+
+  <li>The <code>Content-Encoding</code>
+header - if present - will be dropped, as the module
+cannot know if it was set by intention of the programmer or the
+handler. E.g. php with output compression enabled will set this header,
+but the replacement file send via mod_xsendfile is most likely not
+compressed.</li>
+
+  <li>The header key (X-SENDFILE) is not case-sensitive.</li>
+
+  <li><strong>X-Sendfile will also send files that are
+otherwise protected (e.g. Deny from all). This includes .htaccess and
+such!</strong><br />
+
+At least as long as one has regular file access permissions defined in
+the file system.<br />
+
+But, on the other hand, how is this different from the usual scripting?</li>
+
+</ul>
+
+<h2>Credits</h2>
+
+<p>The idea comes from <a href="http://www.lighttpd.net/">lighttpd</a>
+- <span style="font-style: italic;">A fast web server
+with minimal memory footprint</span>.</p>
+
+<p>The module itself was inspired by many other Apache2 modules
+such as mod_rewrite, mod_headers and such and obviously core.c.</p>
+
+<h2>License</h2>
+
+<p><strong>Copyright 2006 by Nils Maier</strong></p>
+
+<p>Licensed under the <em>Apache License, Version 2.0</em>
+(the
+"License"); you may not use this file except in compliance with the
+License.</p>
+
+<p>You may obtain a copy of the License at<br />
+
+</p>
+
+<p style="text-align: left; margin-left: 40px;"><a href="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</a></p>
+
+<p>Unless
+required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</p>
+
+<p>
+See the License for the specific language governing permissions and
+limitations under the License.
+</p>
+
+<h2 id="changes">Changes</h2>
+<h3>Version 0.9</h3>
+<ul>
+	<li>New configuration directive: XSendFileAllowAbove</li>
+	<li>Initial FastCGI/CGI support</li>
+	<li>Filter only added when needed</li>
+</ul>
+<h3>Version 0.8</h3>
+<ul>
+	<li>This is the initial public release.</li>
+</ul>
+
+</body>
+</html>
