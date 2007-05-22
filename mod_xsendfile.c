@@ -23,16 +23,12 @@
  * Method inspired by lighttpd <http://lighttpd.net/>
  * Code inspired by mod_headers, mod_rewrite and such
  *
- * Configuration:
- *   You may turn on processing in any context, where perdir config overrides server config:
- *   XSendfile On|Off - Enable/disable(default) processing
- *
  * Installation:
  *     apxs2 -cia mod_xsendfile.c
  */
 
 /*
-    v0.9
+    v0.10
     (peer-review still required)
 */
 
@@ -59,100 +55,86 @@
 
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
 
-#if defined(__GNUC__) && (__GNUC__ > 2)
-#   define AP_XSENDFILE_EXPECT_TRUE(x) __builtin_expect((x), 1);
-#   define AP_XSENDFILE_EXPECT_FALSE(x) __builtin_expect((x), 0);
-#else
-#   define AP_XSENDFILE_EXPECT_TRUE(x) (x)
-#   define AP_XSENDFILE_EXPECT_FALSE(x) (x)
-#endif
-
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
 typedef enum {
-    XSENDFILE_UNSET, XSENDFILE_ENABLED, XSENDFILE_DISABLED
+    XSENDFILE_UNSET = 0,
+    XSENDFILE_ENABLED = 1<<0,
+    XSENDFILE_DISABLED = 1<<1
 } xsendfile_conf_active_t;
 
-typedef struct xsendfile_conf_t
-{
-    xsendfile_conf_active_t enabled;
+typedef struct xsendfile_conf_t {
+	xsendfile_conf_active_t enabled;
 	xsendfile_conf_active_t allowAbove;
+	xsendfile_conf_active_t ignoreETag;
+	xsendfile_conf_active_t ignoreLM;
 } xsendfile_conf_t;
 
-static void *xsendfile_config_server_create(apr_pool_t *p, server_rec *s)
-{
-    xsendfile_conf_t *conf;
+static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
+  xsendfile_conf_t *conf;
 
-    conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
-    conf->allowAbove = conf->enabled = XSENDFILE_UNSET;
+  conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
+  conf->ignoreETag =
+  	conf->ignoreLM =
+  	conf->allowAbove =
+  	conf->enabled =
+  	XSENDFILE_UNSET;
 
-    return (void*)conf;
+  return conf;	
+}
+
+static void *xsendfile_config_server_create(apr_pool_t *p, server_rec *s) {
+	return (void*)xsendfile_config_create(p);
 }
 
 #define XSENDFILE_CFLAG(x) conf->x = overrides->x != XSENDFILE_UNSET ? overrides->x : base->x
 
-static void *xsendfile_config_server_merge(apr_pool_t *p, void *basev, void *overridesv)
-{
-    xsendfile_conf_t *base = (xsendfile_conf_t *) basev;
-    xsendfile_conf_t *overrides = (xsendfile_conf_t *) overridesv;
-    xsendfile_conf_t *conf;
+static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv) {
+  xsendfile_conf_t *base = (xsendfile_conf_t *)basev;
+  xsendfile_conf_t *overrides = (xsendfile_conf_t *)overridesv;
+  xsendfile_conf_t *conf;
 
-    conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
+  conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
 
-    XSENDFILE_CFLAG(enabled);
-    XSENDFILE_CFLAG(allowAbove);
-
-    return (void*)conf;
+  XSENDFILE_CFLAG(enabled);
+  XSENDFILE_CFLAG(allowAbove);
+	XSENDFILE_CFLAG(ignoreETag);
+	XSENDFILE_CFLAG(ignoreLM);
+  return (void*)conf;
 }
 
-static void *xsendfile_config_perdir_create(apr_pool_t *p, char *path)
-{
-    xsendfile_conf_t *conf;
-
-    conf = (xsendfile_conf_t *)apr_pcalloc(p, sizeof(xsendfile_conf_t));
-    conf->allowAbove = conf->enabled = XSENDFILE_UNSET;
-
-    return (void*)conf;
-}
-
-static void *xsendfile_config_perdir_merge(apr_pool_t *p, void *basev, void *overridesv)
-{
-    xsendfile_conf_t *base = (xsendfile_conf_t *) basev;
-    xsendfile_conf_t *overrides = (xsendfile_conf_t*)overridesv;
-    xsendfile_conf_t *conf;
-
-    conf = (xsendfile_conf_t*)apr_pcalloc(p, sizeof(xsendfile_conf_t));
-
-
-    XSENDFILE_CFLAG(enabled);
-    XSENDFILE_CFLAG(allowAbove);
-    
-    return (void*)conf;
+static void *xsendfile_config_perdir_create(apr_pool_t *p, char *path) {
+	return (void*)xsendfile_config_create(p);
 }
 #undef XSENDFILE_CFLAG
 
-static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int flag)
-{
-    xsendfile_conf_t *conf = (xsendfile_conf_t *)perdir_confv;
-    if (cmd->path == NULL)
-    {
-        conf = (xsendfile_conf_t*)ap_get_module_config(
-            cmd->server->module_config,
-            &xsendfile_module
-            );
-    }
-    if (conf)
-    {
-        if (strcasecmp(cmd->cmd->name, "xsendfile") == 0)
-        {
-            conf->enabled = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
-        }
-        else
-        {
-            conf->allowAbove = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
-        }
-    }
-    return NULL;
+static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int flag) {
+	xsendfile_conf_t *conf = (xsendfile_conf_t *)perdir_confv;
+	if (cmd->path == NULL) {
+		conf = (xsendfile_conf_t*)ap_get_module_config(
+			cmd->server->module_config,
+			&xsendfile_module
+			);
+	}
+	if (conf) {
+		if (!strcasecmp(cmd->cmd->name, "xsendfile")) {
+			conf->enabled = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
+		}
+		else if (!strcasecmp(cmd->cmd->name, "xsendfileallowabove")) {
+			conf->allowAbove = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
+		}
+		else if (!strcasecmp(cmd->cmd->name, "xsendfileignoreetag")) {
+			conf->ignoreETag = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+			ap_log_error(APLOG_MARK, APLOG_ALERT, 0, cmd->server, "xsendfile: it [%d]", conf->ignoreETag);
+		}
+		else if (!strcasecmp(cmd->cmd->name, "xsendfileignorelastmodified")) {
+			conf->ignoreLM = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+		}
+		else {
+			return apr_psprintf(cmd->pool, "Not a valid command in this context: %s %s", cmd->cmd->name, flag ? "On": "Off");
+		}
+	}
+	return NULL;
 }
 
 /*
@@ -160,8 +142,7 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
 
     code borrowed from request.c and util_script.c
 */
-static const char *ap_xsendfile_get_orginal_path(request_rec *rec)
-{
+static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
     const char
         *rv = rec->the_request,
         *last;
@@ -170,42 +151,35 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec)
     size_t uri_len;
 
     /* skip method && spaces */
-    while (*rv && !apr_isspace(*rv))
-    {
+    while (*rv && !apr_isspace(*rv)) {
         ++rv;
     }
-    while (apr_isspace(*rv))
-    {
+    while (apr_isspace(*rv)) {
         ++rv;
     }
     /* first space is the request end */
     last = rv;
-    while (*last && !apr_isspace(*last))
-    {
+    while (*last && !apr_isspace(*last)) {
         ++last;
     }
     uri_len = last - rv;
-    if (!uri_len)
-    {
+    if (!uri_len) {
         return NULL;
     }
 
     /* alright, lets see if the request_uri changed! */
-    if (strncmp(rv, rec->uri, uri_len) == 0)
-    {
+    if (strncmp(rv, rec->uri, uri_len) == 0) {
         rv = apr_pstrdup(rec->pool, rec->filename);
         dir = rec->finfo.filetype == APR_DIR;
     }
-    else
-    {
+    else {
         /* need to lookup the url again as it changed */
         request_rec *sr = ap_sub_req_lookup_uri(
             apr_pstrmemdup(rec->pool, rv, uri_len),
             rec,
             NULL
             );
-        if (!sr)
-        {
+        if (!sr) {
             return NULL;
         }
         rv = apr_pstrdup(rec->pool, sr->filename);
@@ -214,22 +188,23 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec)
     }
 
     /* now we need to truncate so we only have the directory */
-    if (!dir && (last = ap_strrchr(rv, '/')) != NULL)
-    {
+    if (!dir && (last = ap_strrchr(rv, '/')) != NULL) {
         *((char*)last + 1) = '\0';
     }
-
     return rv;    
 }
 
 static apr_status_t ap_xsendfile_output_filter(
     ap_filter_t *f,
     apr_bucket_brigade *in
-)
-{
+) {
     request_rec *r = f->r, *sr = NULL;
 
-    xsendfile_conf_active_t allowAbove = ((xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module))->allowAbove;
+		xsendfile_conf_t
+			*dconf = (xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module),
+			*sconf = (xsendfile_conf_t *)ap_get_module_config(r->server->module_config, &xsendfile_module),
+			*conf = xsendfile_config_merge(r->pool, sconf, dconf);
+
     core_dir_config *coreconf = (core_dir_config *)ap_get_module_config(r->per_dir_config, &core_module);
 
     apr_status_t rv;
@@ -243,15 +218,9 @@ static apr_status_t ap_xsendfile_output_filter(
 
     int errcode;
 
-    if (XSENDFILE_UNSET == allowAbove)
-    {
-        allowAbove = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->allowAbove;
-    }
-
 #ifdef _DEBUG
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
 #endif
-
     /*
         should we proceed with this request?
 
@@ -262,8 +231,7 @@ static apr_status_t ap_xsendfile_output_filter(
         r->status != HTTP_OK
         || r->main
         || (r->handler && strcmp(r->handler, "default-handler") == 0) /* those table-keys are lower-case, right? */
-    )
-    {
+    ) {
 #ifdef _DEBUG
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: not met [%d]", r->status);
 #endif
@@ -278,15 +246,13 @@ static apr_status_t ap_xsendfile_output_filter(
     apr_table_unset(r->headers_out, AP_XSENDFILE_HEADER);
 
     /* cgi/fastcgi will put the stuff into err_headers_out */
-    if (!file || !*file)
-    {
+    if (!file || !*file) {
         file = apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
         apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
     }
 
     /* nothing there :p */
-    if (!file || !*file)
-    {
+    if (!file || !*file) {
 #ifdef _DEBUG
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: nothing found");
 #endif
@@ -299,8 +265,7 @@ static apr_status_t ap_xsendfile_output_filter(
         might be pretty expensive to generate content first that goes straight to the bitbucket,
         but actually the scripts that might set this flag won't output too much anyway
     */
-    while (!APR_BRIGADE_EMPTY(in))
-    {
+    while (!APR_BRIGADE_EMPTY(in)) {
         e = APR_BRIGADE_FIRST(in);
         apr_bucket_delete(e);
     }
@@ -326,17 +291,16 @@ static apr_status_t ap_xsendfile_output_filter(
         &newpath,
         root,
         file,
-        APR_FILEPATH_TRUENAME | (allowAbove != XSENDFILE_ENABLED ? APR_FILEPATH_SECUREROOT : 0),
+        APR_FILEPATH_TRUENAME | (conf->allowAbove != XSENDFILE_ENABLED ? APR_FILEPATH_SECUREROOT : 0),
         r->pool
-    )) != OK)
-    {
+    )) != OK) {
         ap_log_rerror(
             APLOG_MARK,
             APLOG_ERR,
             rv,
             r,
             "xsendfile: unable to find file: %s, aa=%d",
-            file, allowAbove
+            file, conf->allowAbove
         );
         ap_remove_output_filter(f);
         ap_die(HTTP_NOT_FOUND, r);
@@ -360,8 +324,7 @@ static apr_status_t ap_xsendfile_output_filter(
         ,
         0,
         r->pool
-    )) != APR_SUCCESS)
-    {
+    )) != APR_SUCCESS) {
         ap_log_rerror(
             APLOG_MARK,
             APLOG_ERR,
@@ -375,9 +338,7 @@ static apr_status_t ap_xsendfile_output_filter(
         return HTTP_NOT_FOUND;
     }
 #if APR_HAS_SENDFILE && defined(_DEBUG)
-    if (coreconf->enable_sendfile != ENABLE_SENDFILE_ON)
-    {
-
+    if (coreconf->enable_sendfile != ENABLE_SENDFILE_ON) {
         ap_log_error(
             APLOG_MARK,
             APLOG_WARNING,
@@ -391,8 +352,7 @@ static apr_status_t ap_xsendfile_output_filter(
     /*
         stat (for etag/cache/content-length stuff)
     */
-    if ((rv = apr_file_info_get(&finfo, APR_FINFO_NORM, fd)) != APR_SUCCESS)
-    {
+    if ((rv = apr_file_info_get(&finfo, APR_FINFO_NORM, fd)) != APR_SUCCESS) {
         ap_log_rerror(
             APLOG_MARK,
             APLOG_ERR,
@@ -410,8 +370,7 @@ static apr_status_t ap_xsendfile_output_filter(
         no inclusion of directories!
         we're serving files!
     */
-    if (finfo.filetype != APR_REG)
-    {
+    if (finfo.filetype != APR_REG) {
         ap_log_rerror(
             APLOG_MARK,
             APLOG_ERR,
@@ -439,18 +398,38 @@ static apr_status_t ap_xsendfile_output_filter(
     */
     r->no_cache = r->no_local_copy = 0;
 
-    ap_update_mtime(r, finfo.mtime);
-    ap_set_last_modified(r);
+   	/* some script (f?cgi) place stuff in err_headers_out */
+   	if (
+   		conf->ignoreLM == XSENDFILE_ENABLED
+   		|| (
+   			!apr_table_get(r->headers_out, "last-modified")
+   			&& !apr_table_get(r->headers_out, "last-modified")
+   		)
+   	) {
+   		apr_table_unset(r->err_headers_out, "last-modified");
+    	ap_update_mtime(r, finfo.mtime);
+    	ap_set_last_modified(r);
+    }
+    if (
+    	conf->ignoreETag == XSENDFILE_ENABLED
+    	|| (
+    		!apr_table_get(r->headers_out, "etag")
+    		&& !apr_table_get(r->err_headers_out, "etag")
+    	)
+    ) {
+    	apr_table_unset(r->err_headers_out, "etag");
+    	ap_set_etag(r);
+    }
+
+		apr_table_unset(r->err_headers_out, "content-length");
     ap_set_content_length(r, finfo.size);
-    ap_set_etag(r);
 
     /* as we dropped all the content this field is not valid anymore! */
     apr_table_unset(r->headers_out, "Content-Encoding");
     apr_table_unset(r->err_headers_out, "Content-Encoding");
 
     /* cache or something? */
-    if ((errcode = ap_meets_conditions(r)) != OK)
-    {
+    if ((errcode = ap_meets_conditions(r)) != OK) {
 #ifdef _DEBUG
         ap_log_error(
             APLOG_MARK,
@@ -465,8 +444,7 @@ static apr_status_t ap_xsendfile_output_filter(
         apr_file_close(fd);
         r->status = errcode;
     }
-    else
-    {
+    else {
         e = apr_bucket_file_create(
             fd,
             0,
@@ -475,13 +453,11 @@ static apr_status_t ap_xsendfile_output_filter(
             in->bucket_alloc
         );
 #if APR_HAS_MMAP
-        if (coreconf->enable_mmap == ENABLE_MMAP_ON)
-        {
+        if (coreconf->enable_mmap == ENABLE_MMAP_ON) {
             apr_bucket_file_enable_mmap(e, 0);
         }
 #if defined(_DEBUG)
-        else
-        {
+        else {
             ap_log_error(
                 APLOG_MARK,
                 APLOG_WARNING,
@@ -494,6 +470,17 @@ static apr_status_t ap_xsendfile_output_filter(
 #endif /* _DEBUG */
 #endif /* APR_HAS_MMAP */
         APR_BRIGADE_INSERT_TAIL(in, e);
+        {
+        	char *x = apr_psprintf(r->pool, "%d %d %d\n", conf->ignoreETag, sconf->ignoreETag, dconf->ignoreETag);
+	        e = apr_bucket_pool_create(
+	        	x,
+	        	strlen(x),
+	        	r->pool,
+	        	in->bucket_alloc
+	        );
+	        APR_BRIGADE_INSERT_HEAD(in, e);
+	       }
+        	
     }
 
     e = apr_bucket_eos_create(in->bucket_alloc);
@@ -510,16 +497,13 @@ static apr_status_t ap_xsendfile_output_filter(
     return ap_pass_brigade(f->next, in);
 }
 
-static void ap_xsendfile_insert_output_filter(request_rec *r)
-{
+static void ap_xsendfile_insert_output_filter(request_rec *r) {
     xsendfile_conf_active_t enabled = ((xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module))->enabled;
-    if (XSENDFILE_UNSET == enabled)
-    {
+    if (XSENDFILE_UNSET == enabled) {
         enabled = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->enabled;
     }
 
-    if (XSENDFILE_ENABLED != enabled)
-    {
+    if (XSENDFILE_ENABLED != enabled) {
         return;
     }
 
@@ -535,20 +519,33 @@ static const command_rec xsendfile_command_table[] = {
         "XSendFile",
         xsendfile_cmd_flag,
         NULL,
-        OR_OPTIONS,
+        RSRC_CONF|ACCESS_CONF,
         "On|Off - Enable/disable(default) processing"
         ),
     AP_INIT_FLAG(
         "XSendFileAllowAbove",
         xsendfile_cmd_flag,
         NULL,
-        OR_OPTIONS,
+        RSRC_CONF,
         "On|Off - Allow/disallow(default) sending files above Request path"
         ),
-    { NULL }
+    AP_INIT_FLAG(
+        "XSendFileIgnoreEtag",
+        xsendfile_cmd_flag,
+        NULL,
+        OR_FILEINFO,
+        "On|Off - Ignore script provided Etag headers (default: Off)"
+        ),
+    AP_INIT_FLAG(
+        "XSendFileIgnoreLastModified",
+        xsendfile_cmd_flag,
+        NULL,
+        OR_FILEINFO,
+        "On|Off - Ignore script provided Last-Modified headers (default: Off)"
+        ),
+   { NULL }
 };
-static void xsendfile_register_hooks(apr_pool_t *p)
-{
+static void xsendfile_register_hooks(apr_pool_t *p) {
     ap_register_output_filter(
         "XSENDFILE",
         ap_xsendfile_output_filter,
@@ -563,13 +560,12 @@ static void xsendfile_register_hooks(apr_pool_t *p)
         APR_HOOK_LAST + 1
         );
 }
-module AP_MODULE_DECLARE_DATA xsendfile_module =
-{
+module AP_MODULE_DECLARE_DATA xsendfile_module = {
     STANDARD20_MODULE_STUFF,
     xsendfile_config_perdir_create,
-    xsendfile_config_perdir_merge,
+    xsendfile_config_merge,
     xsendfile_config_server_create,
-    xsendfile_config_server_merge,
+    xsendfile_config_merge,
     xsendfile_command_table,
     xsendfile_register_hooks
 };
