@@ -68,6 +68,7 @@ typedef struct xsendfile_conf_t {
 	xsendfile_conf_active_t allowAbove;
 	xsendfile_conf_active_t ignoreETag;
 	xsendfile_conf_active_t ignoreLM;
+	apr_array_header_t *paths;
 } xsendfile_conf_t;
 
 static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
@@ -79,6 +80,8 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   	conf->allowAbove =
   	conf->enabled =
   	XSENDFILE_UNSET;
+
+ 	conf->paths = apr_array_make(p, 1, sizeof(char*));
 
   return conf;	
 }
@@ -100,6 +103,9 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(allowAbove);
 	XSENDFILE_CFLAG(ignoreETag);
 	XSENDFILE_CFLAG(ignoreLM);
+	
+	conf->paths = apr_array_append(p, overrides->paths, base->paths);
+	
   return (void*)conf;
 }
 
@@ -125,7 +131,6 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
 		}
 		else if (!strcasecmp(cmd->cmd->name, "xsendfileignoreetag")) {
 			conf->ignoreETag = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
-			ap_log_error(APLOG_MARK, APLOG_ALERT, 0, cmd->server, "xsendfile: it [%d]", conf->ignoreETag);
 		}
 		else if (!strcasecmp(cmd->cmd->name, "xsendfileignorelastmodified")) {
 			conf->ignoreLM = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
@@ -136,6 +141,17 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
 	}
 	return NULL;
 }
+
+static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *arg) {
+	xsendfile_conf_t *conf = (xsendfile_conf_t*)ap_get_module_config(
+			cmd->server->module_config,
+			&xsendfile_module
+			);
+	char **newpath = (char**)apr_array_push(conf->paths);
+	*newpath = apr_pstrdup(cmd->pool, arg);	
+	
+	return NULL;	
+}	
 
 /*
     little helper function to get the original request path
@@ -209,14 +225,16 @@ static apr_status_t ap_xsendfile_output_filter(
 
     apr_status_t rv;
     apr_bucket *e;
+    apr_array_header_t *paths;
 
     apr_file_t *fd = NULL;
     apr_finfo_t finfo;
 
     const char *file = NULL, *root = NULL;
     char *newpath = NULL;
+    
 
-    int errcode;
+    int errcode, i;
 
 #ifdef _DEBUG
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
@@ -287,24 +305,33 @@ static apr_status_t ap_xsendfile_output_filter(
     /*
         alright, we now build our new path
     */
-    if ((rv = apr_filepath_merge(
-        &newpath,
-        root,
-        file,
-        APR_FILEPATH_TRUENAME | (conf->allowAbove != XSENDFILE_ENABLED ? APR_FILEPATH_SECUREROOT : 0),
-        r->pool
-    )) != OK) {
-        ap_log_rerror(
-            APLOG_MARK,
-            APLOG_ERR,
-            rv,
-            r,
-            "xsendfile: unable to find file: %s, aa=%d",
-            file, conf->allowAbove
-        );
-        ap_remove_output_filter(f);
-        ap_die(HTTP_NOT_FOUND, r);
-        return HTTP_NOT_FOUND;
+    paths = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(char*));
+    *(const char**)(apr_array_push(paths)) = root;
+    apr_array_cat(paths, conf->paths);
+    
+    for (i = 0; i < paths->nelts; ++i) {
+	    if ((rv = apr_filepath_merge(
+	        &newpath,
+	        paths->elts[i],
+	        file,
+	        APR_FILEPATH_TRUENAME | APR_FILEPATH_SECUREROOT,
+	        r->pool
+	    )) == OK) {
+	    	break;
+	    }
+		}
+		if (rv != OK) {    			
+      ap_log_rerror(
+          APLOG_MARK,
+          APLOG_ERR,
+          rv,
+          r,
+          "xsendfile: unable to find file: %s, aa=%d",
+          file, conf->allowAbove
+      );
+      ap_remove_output_filter(f);
+      ap_die(HTTP_NOT_FOUND, r);
+      return HTTP_NOT_FOUND;
     }
 
 #ifdef _DEBUG
@@ -420,7 +447,7 @@ static apr_status_t ap_xsendfile_output_filter(
     	apr_table_unset(r->err_headers_out, "etag");
     	ap_set_etag(r);
     }
-
+    
 		apr_table_unset(r->err_headers_out, "content-length");
     ap_set_content_length(r, finfo.size);
 
@@ -469,18 +496,7 @@ static apr_status_t ap_xsendfile_output_filter(
         }
 #endif /* _DEBUG */
 #endif /* APR_HAS_MMAP */
-        APR_BRIGADE_INSERT_TAIL(in, e);
-        {
-        	char *x = apr_psprintf(r->pool, "%d %d %d\n", conf->ignoreETag, sconf->ignoreETag, dconf->ignoreETag);
-	        e = apr_bucket_pool_create(
-	        	x,
-	        	strlen(x),
-	        	r->pool,
-	        	in->bucket_alloc
-	        );
-	        APR_BRIGADE_INSERT_HEAD(in, e);
-	       }
-        	
+        APR_BRIGADE_INSERT_TAIL(in, e);        	
     }
 
     e = apr_bucket_eos_create(in->bucket_alloc);
@@ -515,35 +531,42 @@ static void ap_xsendfile_insert_output_filter(request_rec *r) {
     );
 }
 static const command_rec xsendfile_command_table[] = {
-    AP_INIT_FLAG(
-        "XSendFile",
-        xsendfile_cmd_flag,
-        NULL,
-        RSRC_CONF|ACCESS_CONF,
-        "On|Off - Enable/disable(default) processing"
-        ),
-    AP_INIT_FLAG(
-        "XSendFileAllowAbove",
-        xsendfile_cmd_flag,
-        NULL,
-        RSRC_CONF,
-        "On|Off - Allow/disallow(default) sending files above Request path"
-        ),
-    AP_INIT_FLAG(
-        "XSendFileIgnoreEtag",
-        xsendfile_cmd_flag,
-        NULL,
-        OR_FILEINFO,
-        "On|Off - Ignore script provided Etag headers (default: Off)"
-        ),
-    AP_INIT_FLAG(
-        "XSendFileIgnoreLastModified",
-        xsendfile_cmd_flag,
-        NULL,
-        OR_FILEINFO,
-        "On|Off - Ignore script provided Last-Modified headers (default: Off)"
-        ),
-   { NULL }
+	AP_INIT_FLAG(
+		"XSendFile",
+		xsendfile_cmd_flag,
+		NULL,
+		RSRC_CONF|ACCESS_CONF,
+		"On|Off - Enable/disable(default) processing"
+		),
+	AP_INIT_FLAG(
+		"XSendFileAllowAbove",
+		xsendfile_cmd_flag,
+		NULL,
+		RSRC_CONF,
+		"On|Off - Allow/disallow(default) sending files above Request path"
+		),
+	AP_INIT_FLAG(
+		"XSendFileIgnoreEtag",
+		xsendfile_cmd_flag,
+		NULL,
+		OR_FILEINFO,
+		"On|Off - Ignore script provided Etag headers (default: Off)"
+		),
+	AP_INIT_FLAG(
+		"XSendFileIgnoreLastModified",
+		xsendfile_cmd_flag,
+		NULL,
+		OR_FILEINFO,
+		"On|Off - Ignore script provided Last-Modified headers (default: Off)"
+		),
+	AP_INIT_TAKE1(
+		"XSendFilePath",
+		xsendfile_cmd_path,
+		NULL,
+		RSRC_CONF|ACCESS_CONF,
+		"Allow to serve files from that Path. Must be absolute"
+		),
+	{ NULL }
 };
 static void xsendfile_register_hooks(apr_pool_t *p) {
     ap_register_output_filter(
