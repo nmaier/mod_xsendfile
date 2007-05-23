@@ -45,10 +45,12 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				Optimization="2"
-				InlineFunctionExpansion="1"
+				Optimization="3"
+				InlineFunctionExpansion="2"
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
+				OmitFramePointers="true"
+				WholeProgramOptimization="true"
 				AdditionalIncludeDirectories="../../include,../../srclib/apr/include,../../srclib/apr-util/include"
 				PreprocessorDefinitions="NDEBUG;WIN32;_WINDOWS"
 				StringPooling="true"
@@ -83,7 +85,10 @@
 				ProgramDatabaseFile=".\Release/mod_xsendfile.pdb"
 				SubSystem="2"
 				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
+				OptimizeForWindows98="1"
 				ImportLibrary=".\Release/mod_xsendfile.lib"
+				TargetMachine="1"
 			/>
 			<Tool
 				Name="VCALinkTool"
