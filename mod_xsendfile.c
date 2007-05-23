@@ -65,7 +65,6 @@ typedef enum {
 
 typedef struct xsendfile_conf_t {
 	xsendfile_conf_active_t enabled;
-	xsendfile_conf_active_t allowAbove;
 	xsendfile_conf_active_t ignoreETag;
 	xsendfile_conf_active_t ignoreLM;
 	apr_array_header_t *paths;
@@ -77,7 +76,6 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
   conf->ignoreETag =
   	conf->ignoreLM =
-  	conf->allowAbove =
   	conf->enabled =
   	XSENDFILE_UNSET;
 
@@ -100,11 +98,10 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
 
   XSENDFILE_CFLAG(enabled);
-  XSENDFILE_CFLAG(allowAbove);
-	XSENDFILE_CFLAG(ignoreETag);
-	XSENDFILE_CFLAG(ignoreLM);
+  XSENDFILE_CFLAG(ignoreETag);
+  XSENDFILE_CFLAG(ignoreLM);
 	
-	conf->paths = apr_array_append(p, overrides->paths, base->paths);
+  conf->paths = apr_array_append(p, overrides->paths, base->paths);
 	
   return (void*)conf;
 }
@@ -125,9 +122,6 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
 	if (conf) {
 		if (!strcasecmp(cmd->cmd->name, "xsendfile")) {
 			conf->enabled = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
-		}
-		else if (!strcasecmp(cmd->cmd->name, "xsendfileallowabove")) {
-			conf->allowAbove = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
 		}
 		else if (!strcasecmp(cmd->cmd->name, "xsendfileignoreetag")) {
 			conf->ignoreETag = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
@@ -210,6 +204,53 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
     return rv;    
 }
 
+/*
+	little helper function to build the file path if available
+*/
+static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, /* out */ char **path) {
+
+    const char *root = ap_xsendfile_get_orginal_path(r);
+	apr_status_t rv;
+	
+	apr_array_header_t *patharr;
+	const char **paths;
+	int i;
+
+
+#ifdef _DEBUG
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
+#endif
+
+	/* merge the array */
+	if (root) {
+		patharr = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(char*));
+		*(const char**)(apr_array_push(patharr)) = root;
+		apr_array_cat(patharr, conf->paths);
+	} else {
+		patharr = conf->paths;
+	}
+	if (patharr->nelts == 0) {
+		return APR_EBADPATH;
+	}
+	paths = (char**)patharr->elts;
+    
+    for (i = 0; i < patharr->nelts; ++i) {
+	    if ((rv = apr_filepath_merge(
+	        path,
+	        paths[i],
+	        file,
+	        APR_FILEPATH_TRUENAME | APR_FILEPATH_NOTABOVEROOT,
+	        r->pool
+	    )) == OK) {
+	    	break;
+	    }
+	}
+	if (rv != OK) {
+		*path = NULL;
+	}
+	return rv;
+}
+
 static apr_status_t ap_xsendfile_output_filter(
     ap_filter_t *f,
     apr_bucket_brigade *in
@@ -225,16 +266,14 @@ static apr_status_t ap_xsendfile_output_filter(
 
     apr_status_t rv;
     apr_bucket *e;
-    apr_array_header_t *paths;
 
     apr_file_t *fd = NULL;
     apr_finfo_t finfo;
 
-    const char *file = NULL, *root = NULL;
-    char *newpath = NULL;
+    const char *file = NULL;
+    char *translated = NULL;
     
-
-    int errcode, i;
+	int errcode;
 
 #ifdef _DEBUG
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
@@ -289,45 +328,15 @@ static apr_status_t ap_xsendfile_output_filter(
     }
     r->eos_sent = 0;
 
-    /*
-        grab the current path
-        somewhat nasty...
-        any better ways?
-
-        freaking fix for cgi-alike handlers that overwrite our precious values :p
-    */
-    root = ap_xsendfile_get_orginal_path(r);
-
-#ifdef _DEBUG
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
-#endif
-
-    /*
-        alright, we now build our new path
-    */
-    paths = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(char*));
-    *(const char**)(apr_array_push(paths)) = root;
-    apr_array_cat(paths, conf->paths);
-    
-    for (i = 0; i < paths->nelts; ++i) {
-	    if ((rv = apr_filepath_merge(
-	        &newpath,
-	        paths->elts[i],
-	        file,
-	        APR_FILEPATH_TRUENAME | APR_FILEPATH_SECUREROOT,
-	        r->pool
-	    )) == OK) {
-	    	break;
-	    }
-		}
-		if (rv != OK) {    			
+    rv = ap_xsendfile_get_filepath(r, conf, file, &translated);
+	if (rv != OK) {    			
       ap_log_rerror(
           APLOG_MARK,
           APLOG_ERR,
           rv,
           r,
-          "xsendfile: unable to find file: %s, aa=%d",
-          file, conf->allowAbove
+          "xsendfile: unable to find file: %s",
+          file
       );
       ap_remove_output_filter(f);
       ap_die(HTTP_NOT_FOUND, r);
@@ -335,7 +344,7 @@ static apr_status_t ap_xsendfile_output_filter(
     }
 
 #ifdef _DEBUG
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: found %s", newpath);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: found %s", translated);
 #endif
 
     /*
@@ -343,7 +352,7 @@ static apr_status_t ap_xsendfile_output_filter(
     */
     if ((rv = apr_file_open(
         &fd,
-        newpath,
+        translated,
         APR_READ | APR_BINARY
 #if APR_HAS_SENDFILE
         | (coreconf->enable_sendfile == ENABLE_SENDFILE_ON ?  APR_SENDFILE_ENABLED : 0)
@@ -358,7 +367,7 @@ static apr_status_t ap_xsendfile_output_filter(
             rv,
             r,
             "xsendfile: cannot open file: %s",
-            newpath
+            translated
         );
         ap_remove_output_filter(f);
         ap_die(HTTP_NOT_FOUND, r);
@@ -386,7 +395,7 @@ static apr_status_t ap_xsendfile_output_filter(
             rv,
             r,
             "xsendfile: unable to stat file: %s",
-            newpath
+            translated
         );
         apr_file_close(fd);
         ap_remove_output_filter(f);
@@ -404,7 +413,7 @@ static apr_status_t ap_xsendfile_output_filter(
             APR_EBADPATH,
             r,
             "xsendfile: not a file %s",
-            newpath
+            translated
         );
         apr_file_close(fd);
         ap_remove_output_filter(f);
@@ -537,13 +546,6 @@ static const command_rec xsendfile_command_table[] = {
 		NULL,
 		RSRC_CONF|ACCESS_CONF,
 		"On|Off - Enable/disable(default) processing"
-		),
-	AP_INIT_FLAG(
-		"XSendFileAllowAbove",
-		xsendfile_cmd_flag,
-		NULL,
-		RSRC_CONF,
-		"On|Off - Allow/disallow(default) sending files above Request path"
 		),
 	AP_INIT_FLAG(
 		"XSendFileIgnoreEtag",
