@@ -26,11 +26,16 @@ h3 { font-size: medium;
 background-color: rgb(229, 236, 243);
 color: rgb(102, 102, 102);
 }
+h4 { font-size: small;
+}
 p, li { margin-top: 4pt;
 margin-bottom: 6pt;
 }
 .code { border: 1px solid gray;
 padding: 2pt;
+}
+table.directive { text-align: left;
+width: 100%;" 
 }
   </style>
 </head>
@@ -89,13 +94,10 @@ If-Modified-Since.</li>
 <h2>Download</h2>
 
 <ul>
-
 	<li><code><a href="mod_xsendfile.c">mod_xsendfile.c</a></code></li>
-
-	<li><code>Source tarball: <a href="mod_xsendfile-0.9.tar.gz">mod_xsendfile-0.9.tar.gz</a></code></li>
-	
-	<li><code>Win32 binary: <a href="mod_xsendfile-0.9.bin.zip">mod_xsendfile-0.9.bin.zip</a></code></li>
-
+	<li><code>Source tarball: <a href="mod_xsendfile-0.10.tar.gz">mod_xsendfile-0.10.tar.gz</a></code></li>
+	<li><code>Win32 binaries: <a href="mod_xsendfile-0.10.bin.zip">mod_xsendfile-0.10.bin.zip</a></code></li>
+	<li><code>Subversion repository: <a href="http://svn.tn123.ath.cx/mod_xsendfile/">http://svn.tn123.ath.cx/mod_xsendfile/</a>
 </ul>
 
 <h2>Installation</h2>
@@ -120,7 +122,7 @@ If-Modified-Since.</li>
 
 <h3>XSendFile</h3>
 
-<table style="text-align: left; width: 100%;" class="code" border="0" cellpadding="2" cellspacing="0">
+<table class="code directive" border="0" cellpadding="2" cellspacing="0">
   <tbody>
     <tr>
       <th>Description</th>
@@ -152,21 +154,21 @@ of the handler output.</p>
 header nothing is done.
 </p>
 
-<h3>XSendFileAllowAbove</h3>
+<h3>XSendFileIgnoreEtag</h3>
 
-<table style="text-align: left; width: 100%;" class="code" border="0" cellpadding="2" cellspacing="0">
+<table class="code directive" border="0" cellpadding="2" cellspacing="0">
   <tbody>
     <tr>
       <th>Description</th>
-      <td>Allows or disallows sending files above Request path</td>
+      <td>Ignore script provided Etag headers</td>
     </tr>
     <tr>
       <th>Syntax</th>
-      <td>XSendFileAllowAbove on|off</td>
+      <td>XSendFileIgnoreEtag on|off</td>
     </tr>
     <tr>
       <th>Default</th>
-      <td>XSendFileAllowAbove off</td>
+      <td>XSendFileIgnoreEtag off</td>
     </tr>
     <tr>
       <th>Context</th>
@@ -175,10 +177,95 @@ header nothing is done.
   </tbody>
 </table>
 
-<p>Setting <code>XSendFileAllowAbove on</code> will allow sending files not below
-the path of the Request (this refers to the request URI not the translated path).</p>
+<p>Setting <code>XSendFileIgnoreEtag on</code> will ignore all ETag headers the original output handler may have set.<br/>
+This is helpful for applications that will generate such headers even for empty content.</p>
 
+<h2>XSendFileIgnoreLastModified</h2>
 
+<table class="code directive" border="0" cellpadding="2" cellspacing="0">
+  <tbody>
+    <tr>
+      <th>Description</th>
+      <td>Ignore script provided Etag headers</td>
+    </tr>
+    <tr>
+      <th>Syntax</th>
+      <td>XSendFileIgnoreLastModified on|off</td>
+    </tr>
+    <tr>
+      <th>Default</th>
+      <td>XSendFileIgnoreLastModified off</td>
+    </tr>
+    <tr>
+      <th>Context</th>
+      <td>server config, virtual host, directory, .htaccess</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Setting <code>XSendFileIgnoreLastModified on</code> will ignore all Last-Modified headers the original output handler may have set.<br/>
+This is helpful for applications that will generate such headers even for empty content.</p>
+
+<h3>XSendFilePath</h3>
+
+<table class="code directive" border="0" cellpadding="2" cellspacing="0">
+  <tbody>
+    <tr>
+      <th>Description</th>
+      <td>Ignore script provided Etag headers</td>
+    </tr>
+    <tr>
+      <th>Syntax</th>
+      <td>XSendFilePath <code>absolute path</code></td>
+    </tr>
+    <tr>
+      <th>Default</th>
+      <td>None</td>
+    </tr>
+    <tr>
+      <th>Context</th>
+      <td>server config, virtual host, directory</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>XSendFilePath allow you to add additional paths to some kind of whitelist. All files within these paths are allowed to get served thru mod_xsendfile.</p>
+<p>Provide an absolute path as Parameter to this directive.</p>
+<p>You may provide more than one path.<p>
+<h4>Remarks</h4>
+<p>If you provide relative paths via the X-SendFile header, then all paths in this whitelist will be checked for a matching file.<br/>
+Therefore take caution especially in shared environments.</p>
+<p>The current working directory (if it can be determined) will be always checked first.</p>
+<p>The withlist "inherits" entries for higher level configuration.<br/>
+<pre>XSendFilePath /tmp
+&lt;VirtualHost *&gt;
+	ServerName someserver
+	XSendFilePath /home/userxyz
+&lt;/VirtualHost&gt;
+&lt;VirtualHost *&gt;
+	ServerName anotherserver
+	XSendFilePath /var/www/somesite/
+	&lt;Directory /var/www/somesite/fastcgis&gt;
+		XSendFilePath /var/www/shared
+	&lt;/Directory&gt;
+&lt;/VirtualHost&gt;
+</pre>
+<p>Above example will give:</code>
+<ul>
+	<li>*<ul>
+		<li><code>/tmp</code></li>
+	</ul></li>
+	<li>someserver<ul>
+		<li><code>/tmp</code></li>
+		<li><code>/home/userxyz</code></li>
+	</ul></li>
+	<li>another<ul>
+		<li><code>/tmp</code></li>
+		<li><code>/var/www/somesite</code></li>
+		<li><code>/var/www/shared</code> (for scripts* located in /var/www/somesite/fastcgis)</li>
+	</ul></li>
+</ul>
+<p style="font-size:small;">*) Scripts, in this context, mean the actual script-starters. E.g. PHP as a handler will use the .php itself, while in CGI mode refers to the starter.</p>
 <h3>Example</h3>
 
 <p><code>.htaccess</code></p>
@@ -251,7 +338,7 @@ such as mod_rewrite, mod_headers and such and obviously core.c.</p>
 
 <h2>License</h2>
 
-<p><strong>Copyright 2006 by Nils Maier</strong></p>
+<p><strong>Copyright 2006-2007 by Nils Maier</strong></p>
 
 <p>Licensed under the <em>Apache License, Version 2.0</em>
 (the
@@ -275,6 +362,16 @@ limitations under the License.
 </p>
 
 <h2 id="changes">Changes</h2>
+<h3>Version 0.10</h3>
+<ul>
+	<li>Won't override Etag/Last-Modified if already set.</li>
+	<li>New Configuration directive: XSendFileIgnoreEtag</li>
+	<li>New Configuration directive: XSendFileIgnoreLastModified</li>
+	<li>New Configuration directive: XSendFilePath</li>
+	<li>Removed Configuration directive: XSendFileAllowAbove<br/>
+	Use XSendFilePath instead.</li>
+	<li>Improved header handling for FastCGI/CGI output (removing duplicate headers).</li>
+</ul>
 <h3>Version 0.9</h3>
 <ul>
 	<li>New configuration directive: XSendFileAllowAbove</li>
