@@ -15,7 +15,7 @@
 
 /*
  * mod_xsendfile.c: Process X-SENDFILE header cgi/scripts may set
- *     Written by Nils Maier, MaierMan@web.de, March 2006
+ *     Written by Nils Maier, testnutzer123 at google mail, March 2006
  *
  * Whenever an X-SENDFILE header occures in the response headers drop
  * the body and send the replacement file idenfitied by this header instead.
@@ -82,7 +82,7 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
 
   conf->paths = apr_array_make(p, 1, sizeof(char*));
 
-  return conf;  
+  return conf;
 }
 
 static void *xsendfile_config_server_create(apr_pool_t *p, server_rec *s) {
@@ -101,9 +101,9 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(enabled);
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
-  
+
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
-  
+
   return (void*)conf;
 }
 
@@ -134,7 +134,8 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
   }
   else {
     return apr_psprintf(cmd->pool, "Not a valid command in this context: %s %s", cmd->cmd->name, flag ? "On": "Off");
-  }
+  }
+
   return NULL;
 }
 
@@ -144,19 +145,20 @@ static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *arg
     &xsendfile_module
     );
   char **newpath = (char**)apr_array_push(conf->paths);
-  *newpath = apr_pstrdup(cmd->pool, arg);  
-  
-  return NULL;  
-}  
+  *newpath = apr_pstrdup(cmd->pool, arg);
+
+  return NULL;
+}
 
 /*
-	little helper function to get the original request path  code borrowed from request.c and util_script.c
+	little helper function to get the original request path
+  code borrowed from request.c and util_script.c
 */
 static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
   const char
     *rv = rec->the_request,
     *last;
-  
+
   int dir = 0;
   size_t uri_len;
 
@@ -201,7 +203,7 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
   if (!dir && (last = ap_strrchr(rv, '/')) != NULL) {
     *((char*)last + 1) = '\0';
   }
-  return rv;    
+  return rv;
 }
 
 /*
@@ -211,7 +213,7 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *
 
   const char *root = ap_xsendfile_get_orginal_path(r);
   apr_status_t rv;
-  
+
   apr_array_header_t *patharr;
   const char **paths;
   int i;
@@ -233,7 +235,7 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *
     return APR_EBADPATH;
   }
   paths = (const char**)patharr->elts;
-    
+
   for (i = 0; i < patharr->nelts; ++i) {
     if ((rv = apr_filepath_merge(
       path,
@@ -269,7 +271,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   const char *file = NULL;
   char *translated = NULL;
-  
+
 	int errcode;
 
 #ifdef _DEBUG
@@ -326,7 +328,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   r->eos_sent = 0;
 
   rv = ap_xsendfile_get_filepath(r, conf, file, &translated);
-  if (rv != OK) {          
+  if (rv != OK) {
     ap_log_rerror(
       APLOG_MARK,
       APLOG_ERR,
@@ -448,7 +450,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     apr_table_unset(r->err_headers_out, "etag");
     ap_set_etag(r);
   }
-    
+
   apr_table_unset(r->err_headers_out, "content-length");
   ap_set_content_length(r, finfo.size);
 
@@ -497,7 +499,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       }
 #endif /* _DEBUG */
 #endif /* APR_HAS_MMAP */
-	  APR_BRIGADE_INSERT_TAIL(in, e);          
+	  APR_BRIGADE_INSERT_TAIL(in, e);
   }
 
   e = apr_bucket_eos_create(in->bucket_alloc);
