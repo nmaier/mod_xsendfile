@@ -28,10 +28,10 @@
  */
 
 /*
-    v0.10
-    (peer-review still required)
-    $Id:$
-*/
+ * v0.10 (peer-review still required)
+ *
+ * $Id$
+ */
 
 #include "apr.h"
 #include "apr_lib.h"
