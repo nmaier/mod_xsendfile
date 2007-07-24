@@ -231,14 +231,14 @@ This is helpful for applications that will generate such headers even for empty 
   </tbody>
 </table>
 
-<p>XSendFilePath allow you to add additional paths to some kind of whitelist. All files within these paths are allowed to get served thru mod_xsendfile.</p>
+<p>XSendFilePath allow you to add additional paths to some kind of white list. All files within these paths are allowed to get served through mod_xsendfile.</p>
 <p>Provide an absolute path as Parameter to this directive.</p>
 <p>You may provide more than one path.<p>
 <h4>Remarks</h4>
 <p>If you provide relative paths via the X-SendFile header, then all paths in this whitelist will be checked for a matching file.<br/>
 Therefore take caution especially in shared environments.</p>
 <p>The current working directory (if it can be determined) will be always checked first.</p>
-<p>The withlist "inherits" entries for higher level configuration.<br/>
+<p>The withe list "inherits" entries for higher level configuration.<br/>
 <pre>XSendFilePath /tmp
 &lt;VirtualHost *&gt;
 	ServerName someserver
@@ -268,7 +268,7 @@ Therefore take caution especially in shared environments.</p>
 	</ul></li>
 </ul>
 <p style="font-size:small;">*) Scripts, in this context, mean the actual script-starters. E.g. PHP as a handler will use the .php itself, while in CGI mode refers to the starter.</p>
-<p><em>Windows</em> users should take care to include the drive letter to those pathes as well. Tests show that it has to be in upper-case.</p>
+<p><em>Windows</em> users should take care to include the drive letter to those paths as well. Tests show that it has to be in upper-case.</p>
 
 
 <h3>Example</h3>
@@ -324,12 +324,9 @@ compressed.</li>
   <li><strong>X-Sendfile will also send files that are
 otherwise protected (e.g. Deny from all). This includes .htaccess and
 such!</strong><br />
-
-At least as long as one has regular file access permissions defined in
+... as long as one has regular file access permissions defined in
 the file system.<br />
-
 But, on the other hand, how is this different from the usual scripting?</li>
-
 </ul>
 
 <h2>Credits</h2>
@@ -339,7 +336,7 @@ But, on the other hand, how is this different from the usual scripting?</li>
 with minimal memory footprint</span>.</p>
 
 <p>The module itself was inspired by many other Apache2 modules
-such as mod_rewrite, mod_headers and such and obviously core.c.</p>
+such as mod_rewrite, mod_headers and obviously core.c.</p>
 
 <h2>License</h2>
 
