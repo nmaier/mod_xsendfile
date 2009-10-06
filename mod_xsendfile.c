@@ -28,7 +28,7 @@
  */
 
 /*
- * v0.12 (peer-review still required)
+ * v0.11 (peer-review still required)
  *
  * $Id$
  */
@@ -475,26 +475,29 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     r->status = errcode;
   }
   else {
-	if (finfo.size > AP_MAX_SENDFILE) {
-		apr_off_t fsize = finfo.size;
-        e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool, in->bucket_alloc);
-		while (fsize > AP_MAX_SENDFILE) {
-			apr_bucket *ce;
-            apr_bucket_copy(e, &ce);
-#if APR_HAS_MMAP
-			if (coreconf->enable_mmap == ENABLE_MMAP_ON) {
-				apr_bucket_file_enable_mmap(ce, 0);
-			}
-#endif
-            APR_BRIGADE_INSERT_TAIL(in, ce);
-            e->start += AP_MAX_SENDFILE;
-            fsize -= AP_MAX_SENDFILE;
-		}
-        e->length = (apr_size_t)fsize; /* Resize just the last bucket */
-	}
-    else {
-		e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size, r->pool, in->bucket_alloc);
-	}
+            /* For platforms where the size of the file may be larger than
+             * that which can be stored in a single bucket (where the
+             * length field is an apr_size_t), split it into several
+             * buckets: */
+            if (sizeof(apr_off_t) > sizeof(apr_size_t)
+                && finfo.size > AP_MAX_SENDFILE) {
+                apr_off_t fsize = finfo.size;
+                e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
+                                           in->bucket_alloc);
+                while (fsize > AP_MAX_SENDFILE) {
+                    apr_bucket *ce;
+                    apr_bucket_copy(e, &ce);
+                    APR_BRIGADE_INSERT_TAIL(in, ce);
+                    e->start += AP_MAX_SENDFILE;
+                    fsize -= AP_MAX_SENDFILE;
+                }
+                e->length = (apr_size_t)fsize; /* Resize just the last bucket */
+            }
+            else {
+                e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
+                                           r->pool, in->bucket_alloc);
+            }
+
 
 #if APR_HAS_MMAP
     if (coreconf->enable_mmap == ENABLE_MMAP_ON) {
