@@ -1,6 +1,6 @@
 1 VERSIONINFO
- FILEVERSION 0,10,0,0
- PRODUCTVERSION 0,10,0,0
+ FILEVERSION 0,11,1,0
+ PRODUCTVERSION 0,11,1,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -18,12 +18,12 @@ BEGIN
             VALUE "Comments", "Licensed under the Apache License, Version 2.0 (the ""License""); you may not use this file except in compliance with the License.  You may obtain a copy of the License at\r\n\r\nhttp://www.apache.org/licenses/LICENSE-2.0\r\n\r\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an ""AS IS"" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions and limitations under the License."
             VALUE "CompanyName", "Nils Maier"
             VALUE "FileDescription", "xsendfile_module for Apache"
-            VALUE "FileVersion", "0.11"
+            VALUE "FileVersion", "0.11.1"
             VALUE "InternalName", "mod_xsendfile.so"
-            VALUE "LegalCopyright", "Copyright 2006-2012 Nils Maier"
+            VALUE "LegalCopyright", "Copyright 2006-2010 Nils Maier"
             VALUE "OriginalFilename", "mod_xsendfile.so"
             VALUE "ProductName", "Apache HTTP Server"
-            VALUE "ProductVersion", "0.11"
+            VALUE "ProductVersion", "0.11.1"
         END
     END
 END
