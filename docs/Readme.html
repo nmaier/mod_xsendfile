@@ -1,13 +1,9 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-
   <meta content="text/html; charset=UTF-8" http-equiv="content-type" />
   <title>mod_xsendfile for Apache2/Apache2.2</title>
-
-
   <meta content="Nils Maier" name="author" />
-
   <style media="all" type="text/css">
 body { width: 80ex;
 font-family: sans-serif;
@@ -37,11 +33,11 @@ padding: 2pt;
 table.directive { text-align: left;
 width: 100%;
 }
+.checksum {
+	font-size: x-small;
+}
   </style>
 </head>
-
-
-
 <body>
 
 <h1>mod_xsendfile for Apache2/Apache2.2</h1>
@@ -93,29 +89,13 @@ If-Modified-Since.</li>
 
 </ul>
 
-<h2>Download</h2>
-
-<ul>
-	<li><code><a href="mod_xsendfile.c">mod_xsendfile.c</a></code></li>
-	<li><code>Source tarball: <a href="mod_xsendfile-0.11.tar.gz">mod_xsendfile-0.11.tar.gz</a></code></li>
-	<li><code>Win32 binaries: <a href="mod_xsendfile-0.11.bin.zip">mod_xsendfile-0.11.bin.zip</a></code></li>
-	<li><code>Subversion repository: <a href="http://svn.tn123.ath.cx/mod_xsendfile/">http://svn.tn123.ath.cx/mod_xsendfile/</a>
-</ul>
-
 <h2>Installation</h2>
-
 <ol>
-
-  <li>Grab the <a href="mod_xsendfile.c">source</a>.</li>
-
+  <li>Grab the source.</li>
   <li>Compile and install<br />
-
     <code>apxs -cia mod_xsendfile.c</code></li>
-
   <li>Restart apache</li>
-
   <li>That's all.</li>
-
 </ol>
 
 <h2>Configuration</h2>
@@ -186,7 +166,7 @@ This is helpful for applications that will generate such headers even for empty 
   <tbody>
     <tr>
       <th>Description</th>
-      <td>Ignore script provided Etag headers</td>
+      <td>Ignore script provided LastModified headers</td>
     </tr>
     <tr>
       <th>Syntax</th>
@@ -212,7 +192,7 @@ This is helpful for applications that will generate such headers even for empty 
   <tbody>
     <tr>
       <th>Description</th>
-      <td>Ignore script provided Etag headers</td>
+	  <td>White-list more paths</td>
     </tr>
     <tr>
       <th>Syntax</th>
@@ -362,6 +342,11 @@ limitations under the License.
 </p>
 
 <h2 id="changes">Changes</h2>
+<h3>Version 0.11.1</h3>
+<ul>
+	<li>Fixed some documentation bugs</li>
+  <li>Built win32 binaries against latest httpd</li>
+</ul>
 <h3>Version 0.11</h3>
 <ul>
 	<li>Fixed large file support</li>
