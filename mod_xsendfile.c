@@ -121,7 +121,7 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
       );
   }
   if (!conf) {
-  	return "Cannot get configuration object";
+    return "Cannot get configuration object";
   }
   if (!strcasecmp(cmd->cmd->name, "xsendfile")) {
     conf->enabled = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
@@ -151,7 +151,7 @@ static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *arg
 }
 
 /*
-	little helper function to get the original request path
+  little helper function to get the original request path
   code borrowed from request.c and util_script.c
 */
 static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
@@ -278,7 +278,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
 #endif
   /*
-	  should we proceed with this request?
+    should we proceed with this request?
 
     * sub-requests suck
     * furthermore default-handled requests suck, as they actually shouldn't be able to set headers
@@ -301,8 +301,8 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   file = apr_table_get(r->headers_out, AP_XSENDFILE_HEADER);
   apr_table_unset(r->headers_out, AP_XSENDFILE_HEADER);
 
-	/* cgi/fastcgi will put the stuff into err_headers_out */
-	if (!file || !*file) {
+  /* cgi/fastcgi will put the stuff into err_headers_out */
+  if (!file || !*file) {
     file = apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
     apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
   }
@@ -336,7 +336,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       r,
       "xsendfile: unable to find file: %s",
       file
-	    );
+      );
     ap_remove_output_filter(f);
     ap_die(HTTP_NOT_FOUND, r);
     return HTTP_NOT_FOUND;
@@ -346,10 +346,10 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: found %s", translated);
 #endif
 
-	/*
-	    try open the file
-	*/
-	if ((rv = apr_file_open(
+  /*
+    ry open the file
+  */
+  if ((rv = apr_file_open(
     &fd,
     translated,
     APR_READ | APR_BINARY
@@ -359,7 +359,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     ,
     0,
     r->pool
-	)) != APR_SUCCESS) {
+  )) != APR_SUCCESS) {
     ap_log_rerror(
       APLOG_MARK,
       APLOG_ERR,
@@ -367,11 +367,11 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       r,
       "xsendfile: cannot open file: %s",
       translated
-		  );
+      );
     ap_remove_output_filter(f);
     ap_die(HTTP_NOT_FOUND, r);
     return HTTP_NOT_FOUND;
-	}
+  }
 #if APR_HAS_SENDFILE && defined(_DEBUG)
   if (coreconf->enable_sendfile != ENABLE_SENDFILE_ON) {
     ap_log_error(
@@ -393,11 +393,11 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       r,
       "xsendfile: unable to stat file: %s",
       translated
-	    );
-      apr_file_close(fd);
-      ap_remove_output_filter(f);
-      ap_die(HTTP_FORBIDDEN, r);
-      return HTTP_FORBIDDEN;
+      );
+    apr_file_close(fd);
+    ap_remove_output_filter(f);
+    ap_die(HTTP_FORBIDDEN, r);
+    return HTTP_FORBIDDEN;
   }
   /* no inclusion of directories! we're serving files! */
   if (finfo.filetype != APR_REG) {
@@ -409,10 +409,10 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       "xsendfile: not a file %s",
       translated
       );
-	    apr_file_close(fd);
-	    ap_remove_output_filter(f);
-	    ap_die(HTTP_NOT_FOUND, r);
-	    return HTTP_NOT_FOUND;
+    apr_file_close(fd);
+    ap_remove_output_filter(f);
+    ap_die(HTTP_NOT_FOUND, r);
+    return HTTP_NOT_FOUND;
   }
 
   /*
@@ -436,15 +436,15 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       && !apr_table_get(r->headers_out, "last-modified")
     )
   ) {
-		apr_table_unset(r->err_headers_out, "last-modified");
+    apr_table_unset(r->err_headers_out, "last-modified");
     ap_update_mtime(r, finfo.mtime);
     ap_set_last_modified(r);
   }
   if (
     conf->ignoreETag == XSENDFILE_ENABLED
     || (
-	    !apr_table_get(r->headers_out, "etag")
-	    && !apr_table_get(r->err_headers_out, "etag")
+      !apr_table_get(r->headers_out, "etag")
+      && !apr_table_get(r->err_headers_out, "etag")
     )
   ) {
     apr_table_unset(r->err_headers_out, "etag");
@@ -469,34 +469,34 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       "xsendfile: met condition %d for %s",
       errcode,
       file
-	    );
+      );
 #endif
     apr_file_close(fd);
     r->status = errcode;
   }
   else {
-            /* For platforms where the size of the file may be larger than
-             * that which can be stored in a single bucket (where the
-             * length field is an apr_size_t), split it into several
-             * buckets: */
-            if (sizeof(apr_off_t) > sizeof(apr_size_t)
-                && finfo.size > AP_MAX_SENDFILE) {
-                apr_off_t fsize = finfo.size;
-                e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
-                                           in->bucket_alloc);
-                while (fsize > AP_MAX_SENDFILE) {
-                    apr_bucket *ce;
-                    apr_bucket_copy(e, &ce);
-                    APR_BRIGADE_INSERT_TAIL(in, ce);
-                    e->start += AP_MAX_SENDFILE;
-                    fsize -= AP_MAX_SENDFILE;
-                }
-                e->length = (apr_size_t)fsize; /* Resize just the last bucket */
-            }
-            else {
-                e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
-                                           r->pool, in->bucket_alloc);
-            }
+    /* For platforms where the size of the file may be larger than
+     * that which can be stored in a single bucket (where the
+     * length field is an apr_size_t), split it into several
+     * buckets: */
+    if (sizeof(apr_off_t) > sizeof(apr_size_t)
+        && finfo.size > AP_MAX_SENDFILE) {
+        apr_off_t fsize = finfo.size;
+        e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
+                                   in->bucket_alloc);
+        while (fsize > AP_MAX_SENDFILE) {
+            apr_bucket *ce;
+            apr_bucket_copy(e, &ce);
+            APR_BRIGADE_INSERT_TAIL(in, ce);
+            e->start += AP_MAX_SENDFILE;
+            fsize -= AP_MAX_SENDFILE;
+        }
+        e->length = (apr_size_t)fsize; /* Resize just the last bucket */
+    }
+    else {
+        e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
+                                   r->pool, in->bucket_alloc);
+    }
 
 
 #if APR_HAS_MMAP
@@ -516,7 +516,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
       }
 #endif /* _DEBUG */
 #endif /* APR_HAS_MMAP */
-	  APR_BRIGADE_INSERT_TAIL(in, e);
+    APR_BRIGADE_INSERT_TAIL(in, e);
   }
 
   e = apr_bucket_eos_create(in->bucket_alloc);
