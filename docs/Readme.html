@@ -282,11 +282,11 @@ if&nbsp;(</span><span style="color: rgb(0, 0, 187);">$user</span><span style="co
 
 {<br />
 
-&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"X-Sendfile:&nbsp;$somefile"</span><span style="color: rgb(0, 119, 0);">);<br />
+&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"X-Sendfile:&nbsp;$path_to_somefile"</span><span style="color: rgb(0, 119, 0);">);<br />
 
 &nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"Content-Type:&nbsp;application/octet-stream"</span><span style="color: rgb(0, 119, 0);">);<br />
 
-&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"Content-Disposition:&nbsp;attachment;&nbsp;file=\"$somefile\""</span><span style="color: rgb(0, 119, 0);">);<br />
+&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="color: rgb(0, 0, 187);">header</span><span style="color: rgb(0, 119, 0);">(</span><span style="color: rgb(221, 0, 0);">"Content-Disposition:&nbsp;attachment;&nbsp;filename=\"$somefile\""</span><span style="color: rgb(0, 119, 0);">);<br />
 
 &nbsp;&nbsp;&nbsp;&nbsp;exit;<br />
 
