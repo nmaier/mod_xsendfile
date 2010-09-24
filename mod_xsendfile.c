@@ -354,7 +354,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     translated,
     APR_READ | APR_BINARY
 #if APR_HAS_SENDFILE
-    | (coreconf->enable_sendfile == ENABLE_SENDFILE_ON ?  APR_SENDFILE_ENABLED : 0)
+    | (coreconf->enable_sendfile != ENABLE_SENDFILE_OFF ? APR_SENDFILE_ENABLED : 0)
 #endif
     ,
     0,
@@ -373,7 +373,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     return HTTP_NOT_FOUND;
   }
 #if APR_HAS_SENDFILE && defined(_DEBUG)
-  if (coreconf->enable_sendfile != ENABLE_SENDFILE_ON) {
+  if (coreconf->enable_sendfile == ENABLE_SENDFILE_OFF) {
     ap_log_error(
       APLOG_MARK,
       APLOG_WARNING,
