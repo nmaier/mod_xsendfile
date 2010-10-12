@@ -272,7 +272,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   const char *file = NULL;
   char *translated = NULL;
 
-	int errcode;
+  int errcode;
 
 #ifdef _DEBUG
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
@@ -347,7 +347,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 #endif
 
   /*
-    ry open the file
+    try open the file
   */
   if ((rv = apr_file_open(
     &fd,
