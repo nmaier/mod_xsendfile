@@ -327,6 +327,12 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   }
   r->eos_sent = 0;
 
+  /* as we dropped all the content this field is not valid anymore! */
+  apr_table_unset(r->headers_out, "Content-Length");
+  apr_table_unset(r->err_headers_out, "Content-Length");
+  apr_table_unset(r->headers_out, "Content-Encoding");
+  apr_table_unset(r->err_headers_out, "Content-Encoding");
+
   rv = ap_xsendfile_get_filepath(r, conf, file, &translated);
   if (rv != OK) {
     ap_log_rerror(
@@ -451,12 +457,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     ap_set_etag(r);
   }
 
-  apr_table_unset(r->err_headers_out, "content-length");
   ap_set_content_length(r, finfo.size);
-
-  /* as we dropped all the content this field is not valid anymore! */
-  apr_table_unset(r->headers_out, "Content-Encoding");
-  apr_table_unset(r->err_headers_out, "Content-Encoding");
 
   /* cache or something? */
   if ((errcode = ap_meets_conditions(r)) != OK) {
