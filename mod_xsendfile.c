@@ -28,7 +28,7 @@
  */
 
 /*
- * v0.11 (peer-review still required)
+ * v0.12 (peer-review still required)
  *
  * $Id$
  */
