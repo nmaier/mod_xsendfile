@@ -64,6 +64,7 @@ typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t enabled;
   xsendfile_conf_active_t ignoreETag;
   xsendfile_conf_active_t ignoreLM;
+  xsendfile_conf_active_t unescape;
   apr_array_header_t *paths;
 } xsendfile_conf_t;
 
@@ -71,7 +72,8 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   xsendfile_conf_t *conf;
 
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
-  conf->ignoreETag =
+  conf->unescape =
+    conf->ignoreETag =
     conf->ignoreLM =
     conf->enabled =
     XSENDFILE_UNSET;
@@ -97,16 +99,17 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(enabled);
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
+  XSENDFILE_CFLAG(unescape);
 
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
 
   return (void*)conf;
 }
+#undef XSENDFILE_CFLAG
 
 static void *xsendfile_config_perdir_create(apr_pool_t *p, char *path) {
   return (void*)xsendfile_config_create(p);
 }
-#undef XSENDFILE_CFLAG
 
 static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int flag) {
   xsendfile_conf_t *conf = (xsendfile_conf_t *)perdir_confv;
@@ -127,6 +130,9 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
   }
   else if (!strcasecmp(cmd->cmd->name, "xsendfileignorelastmodified")) {
     conf->ignoreLM = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+  }
+  else if (!strcasecmp(cmd->cmd->name, "xsendfileunescape")) {
+    conf->unescape = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
   }
   else {
     return apr_psprintf(cmd->pool, "Not a valid command in this context: %s %s", cmd->cmd->name, flag ? "On": "Off");
@@ -331,22 +337,24 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   /* Decode header
      lighttpd does the same for X-Sendfile2, so we're compatible here
      */
-  rv = ap_unescape_url(file);
-  if (rv != OK) {
-    /* Unescaping failed, probably due to bad encoding.
-       Note that NOT_FOUND refers to escape sequences containing slashes,
-       what we do not allow (use real slashes only)
-       */
-    ap_log_rerror(
-      APLOG_MARK,
-      APLOG_ERR,
-      rv,
-      r,
-      "xsendfile: bad file name encoding"
-      );
-    ap_remove_output_filter(f);
-    ap_die(HTTP_INTERNAL_SERVER_ERROR, r);
-    return HTTP_INTERNAL_SERVER_ERROR;
+  if (conf->unescape != XSENDFILE_DISABLED) {
+    rv = ap_unescape_url(file);
+    if (rv != OK) {
+      /* Unescaping failed, probably due to bad encoding.
+         Note that NOT_FOUND refers to escape sequences containing slashes,
+         what we do not allow (use real slashes only)
+         */
+      ap_log_rerror(
+        APLOG_MARK,
+        APLOG_ERR,
+        rv,
+        r,
+        "xsendfile: bad file name encoding"
+        );
+      ap_remove_output_filter(f);
+      ap_die(HTTP_INTERNAL_SERVER_ERROR, r);
+      return HTTP_INTERNAL_SERVER_ERROR;
+    }
   }
 
   /* lookup/verification of the given path */
@@ -589,6 +597,13 @@ static const command_rec xsendfile_command_table[] = {
     NULL,
     OR_FILEINFO,
     "On|Off - Ignore script provided Last-Modified headers (default: Off)"
+    ),
+  AP_INIT_FLAG(
+    "XSendFileUnescape",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Unescape/url-decode the value of the header (default: On)"
     ),
   AP_INIT_TAKE1(
     "XSendFilePath",
