@@ -269,7 +269,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   apr_file_t *fd = NULL;
   apr_finfo_t finfo;
 
-  const char *file = NULL;
+  char *file = NULL;
   char *translated = NULL;
 
   int errcode;
@@ -298,15 +298,14 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   /*
     alright, look for x-sendfile
   */
-  file = apr_table_get(r->headers_out, AP_XSENDFILE_HEADER);
+  file = (char*)apr_table_get(r->headers_out, AP_XSENDFILE_HEADER);
   apr_table_unset(r->headers_out, AP_XSENDFILE_HEADER);
 
   /* cgi/fastcgi will put the stuff into err_headers_out */
   if (!file || !*file) {
-    file = apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
+    file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
     apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
   }
-
   /* nothing there :p */
   if (!file || !*file) {
 #ifdef _DEBUG
@@ -333,6 +332,28 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   apr_table_unset(r->headers_out, "Content-Encoding");
   apr_table_unset(r->err_headers_out, "Content-Encoding");
 
+  /* Decode header
+     lighttpd does the same for X-Sendfile2, so we're compatible here
+     */
+  rv = ap_unescape_url(file);
+  if (rv != OK) {
+    /* Unescaping failed, probably due to bad encoding.
+       Note that NOT_FOUND refers to escape sequences containing slashes,
+       what we do not allow (use real slashes only)
+       */
+    ap_log_rerror(
+      APLOG_MARK,
+      APLOG_ERR,
+      rv,
+      r,
+      "xsendfile: bad file name encoding"
+      );
+    ap_remove_output_filter(f);
+    ap_die(HTTP_INTERNAL_SERVER_ERROR, r);
+    return HTTP_INTERNAL_SERVER_ERROR;
+  }
+
+  /* lookup/verification of the given path */
   rv = ap_xsendfile_get_filepath(r, conf, file, &translated);
   if (rv != OK) {
     ap_log_rerror(
