@@ -27,11 +27,7 @@
  *     apxs2 -cia mod_xsendfile.c
  */
 
-/*
- * v0.12 (peer-review still required)
- *
- * $Id$
- */
+/* Version: 1.0 */
 
 #include "apr.h"
 #include "apr_lib.h"
