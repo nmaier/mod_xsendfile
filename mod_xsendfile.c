@@ -51,6 +51,7 @@
 #include "http_protocol.h" /* ap_hook_insert_error_filter */
 
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
+#define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -275,6 +276,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   char *translated = NULL;
 
   int errcode;
+  int is_temp = 0;
 
 #ifdef _DEBUG
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
@@ -305,8 +307,21 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   /* cgi/fastcgi will put the stuff into err_headers_out */
   if (!file || !*file) {
-    file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
-    apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
+	file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
+	apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
+	/*
+	  so...there is no X-SendFile header, check if there is an X-SendFile-Temporary header (added by jrhee)
+	 */
+	if (!file || !*file){
+	  is_temp = 1;
+	  file = (char*)apr_table_get(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+	  apr_table_unset(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+	  if (!file || !*file){
+		file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+		apr_table_unset(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+	  }
+
+	}
   }
   /* nothing there :p */
   if (!file || !*file) {
@@ -384,6 +399,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     &fd,
     translated,
     APR_READ | APR_BINARY
+    | (is_temp == 1 ? APR_DELONCLOSE : 0)  //if this is a temporary file, delete on close
 #if APR_HAS_SENDFILE
     | (coreconf->enable_sendfile != ENABLE_SENDFILE_OFF ? APR_SENDFILE_ENABLED : 0)
 #endif
