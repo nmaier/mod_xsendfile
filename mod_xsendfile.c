@@ -323,22 +323,23 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   /* cgi/fastcgi will put the stuff into err_headers_out */
   if (!file || !*file) {
-	file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
-	apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
-	/*
-	  so...there is no X-SendFile header, check if there is an X-SendFile-Temporary header (added by jrhee)
-	 */
-	if (!file || !*file){
-	  is_temp = 1;
-	  file = (char*)apr_table_get(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
-	  apr_table_unset(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
-	  if (!file || !*file){
-		file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
-		apr_table_unset(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
-	  }
-
-	}
+    file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
+    apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
   }
+
+  /*
+    so...there is no X-SendFile header, check if there is an X-SendFile-Temporary header (added by jrhee)
+  */
+  if (!file || !*file){
+    is_temp = 1;
+    file = (char*)apr_table_get(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+    apr_table_unset(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  }
+  if (!file || !*file){
+    file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+    apr_table_unset(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  }
+
   /* nothing there :p */
   if (!file || !*file) {
 #ifdef _DEBUG
@@ -415,7 +416,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     &fd,
     translated,
     APR_READ | APR_BINARY
-    | (is_temp == 1 ? APR_DELONCLOSE : 0)  //if this is a temporary file, delete on close
+    | (is_temp ? APR_DELONCLOSE : 0)  //if this is a temporary file, delete on close
 #if APR_HAS_SENDFILE
     | (coreconf->enable_sendfile != ENABLE_SENDFILE_OFF ? APR_SENDFILE_ENABLED : 0)
 #endif
