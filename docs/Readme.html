@@ -100,6 +100,12 @@ If-Modified-Since.</li>
 
 <h2>Configuration</h2>
 
+<h3>Headers</h3>
+<ul>
+  <li><code>X-SENDFILE</code> - Send the file referenced by this headers instead of the current response body</li>
+  <li><code>X-SENDFILE-TEMPORARY</code> - Like <code>X-SENDFILE</code>, but the file will be deleted afterwards. The file must originate from a path that has the <code>AllowFileDelete</code> flag enabled.</li>
+</ul>
+
 <h3>XSendFile</h3>
 
 <table class="code directive" border="0" cellpadding="2" cellspacing="0">
@@ -128,7 +134,7 @@ processing.</p>
 
 <p>The file specified in <code>X-SENDFILE</code> header will be sent instead of the handler output.</p>
 
-<p>The value (file name) given by the header is assmumed to be url-encoded, i.e. unescaping/url-decoding will be performed. See <a href="XSendFileUnescape</a>.<br/>
+<p>The value (file name) given by the header is assmumed to be url-encoded, i.e. unescaping/url-decoding will be performed. See <a href="#XSendFileUnescape">XSendFileUnescape</a>.<br/>
 If you happen to store files using already url-encoded file names, you must "double" encode the names... <code>%20 -> %2520</code></p>
 
 <p>If the response lacks the <code>X-SENDFILE</code>
@@ -224,7 +230,7 @@ Hence this setting is meant only for backwards-compatibility with legacy applica
     </tr>
     <tr>
       <th>Syntax</th>
-      <td>XSendFilePath <code>absolute path</code></td>
+      <td>XSendFilePath <code>&lt;absolute path&gt;</code> [<code>AllowFileDelete</code>]</td>
     </tr>
     <tr>
       <th>Default</th>
@@ -239,6 +245,8 @@ Hence this setting is meant only for backwards-compatibility with legacy applica
 
 <p>XSendFilePath allow you to add additional paths to some kind of white list. All files within these paths are allowed to get served through mod_xsendfile.</p>
 <p>Provide an absolute path as Parameter to this directive.</p>
+<p>If the optional <code>AllowFileDelete</code> flag is specified, then files under this path can be served using the <code>X-SENDFILE-TEMPORARY</code> header, and will then be deleted once the file is delievered.
+Hence you should only set the <code>AllowFileDelete</code> flag for paths that do not hold any files that shouldn't be deleted!</p>
 <p>You may provide more than one path.<p>
 <h4>Remarks - Relative paths</h4>
 <p>The current working directory (if it can be determined) will be always checked first.</p>
@@ -386,6 +394,7 @@ limitations under the License.
 <ul>
 	<li>Unescape/url-decode header value to support non-ascii file names</li>
 	<li><code>XSendFileUnescape</code> setting, to support legacy applications</li>
+  <li><code>X-SENDFILE-TEMPORARY</code> header and corresponding <code>AllowFileDelete</code> flag</li>
 </ul>
 <h3>Version 0.12</h3>
 <ul>
