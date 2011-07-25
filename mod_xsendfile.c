@@ -70,6 +70,12 @@ typedef struct xsendfile_conf_t {
   apr_array_header_t *temporaryPaths;
 } xsendfile_conf_t;
 
+/* structure to hold the path and permissions */
+typedef struct xsendfile_path_t {
+  char *path;
+  int is_temp;
+} xsendfile_path_t;
+
 static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   xsendfile_conf_t *conf;
 
@@ -80,8 +86,7 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
     conf->enabled =
     XSENDFILE_UNSET;
 
-  conf->paths = apr_array_make(p, 1, sizeof(char*));
-  conf->temporaryPaths = apr_array_make(p, 1, sizeof(char*));
+  conf->paths = apr_array_make(p, 1, sizeof(xsendfile_path_t));
 
   return conf;
 }
@@ -105,7 +110,6 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(unescape);
 
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
-  conf->temporaryPaths = apr_array_append(p, overrides->temporaryPaths, base->temporaryPaths);
 
   return (void*)conf;
 }
@@ -145,19 +149,15 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
   return NULL;
 }
 
-static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *arg) {
+static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *path, const char *is_temp) {
   xsendfile_conf_t *conf = (xsendfile_conf_t*)ap_get_module_config(
     cmd->server->module_config,
     &xsendfile_module
     );
-  char **newpath;
-  if(cmd->info == "is_temp"){
-	  newpath = (char**)apr_array_push(conf->temporaryPaths);
-  }else{
-	  newpath = (char**)apr_array_push(conf->paths);
-  }
 
-  *newpath = apr_pstrdup(cmd->pool, arg);
+  xsendfile_path_t *newpath = (xsendfile_path_t*)apr_array_push(conf->paths);
+
+  *newpath = (xsendfile_path_t){apr_pstrdup(cmd->pool, path), (is_temp && strcmp(is_temp, "AllowFileDelete")==0 ? 1: 0)};
 
   return NULL;
 }
@@ -221,13 +221,13 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
 /*
   little helper function to build the file path if available
 */
-static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, /* out */ char **path, int *is_temp) {
+static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, /* out */ char **path, int is_temp) {
 
   const char *root = ap_xsendfile_get_orginal_path(r);
   apr_status_t rv;
 
   apr_array_header_t *patharr;
-  const char **paths;
+  xsendfile_path_t *paths;
   int i;
 
 
@@ -235,30 +235,24 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
 #endif
 
-  if(is_temp){
-	if(root){		//we will be adding root to this array so make a copy
-	  patharr = apr_array_copy(r->pool, conf->temporaryPaths);
-	}else{			//no need to take anymore memory
-	  patharr = conf->temporaryPaths;
-	}
+  if (!is_temp && root) {
+    patharr = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(xsendfile_path_t));
+    *(xsendfile_path_t*)(apr_array_push(patharr)) = (xsendfile_path_t){root, 0};
+    apr_array_cat(patharr, conf->paths);
+  } else {
+    patharr = conf->paths;
   }
-  else{				//temporary paths can be read from in any case, so combine temporary paths with paths
-	patharr = apr_array_append(r->pool, conf->temporaryPaths, conf->paths);
-  }
-
-  if (root) {		//add in root
-    *(const char**)(apr_array_push(patharr)) = root;
-  }
-
   if (patharr->nelts == 0) {
     return APR_EBADPATH;
   }
-  paths = (const char**)patharr->elts;
+  paths = (const xsendfile_path_t*)patharr->elts;
 
   for (i = 0; i < patharr->nelts; ++i) {
-    if ((rv = apr_filepath_merge(
+    if(is_temp && !paths[i].is_temp){
+      continue;
+    }else if ((rv = apr_filepath_merge(
       path,
-      paths[i],
+      paths[i].path,
       file,
       APR_FILEPATH_TRUENAME | APR_FILEPATH_NOTABOVEROOT,
       r->pool
@@ -638,20 +632,13 @@ static const command_rec xsendfile_command_table[] = {
     OR_FILEINFO,
     "On|Off - Unescape/url-decode the value of the header (default: On)"
     ),
-  AP_INIT_TAKE1(
+  AP_INIT_TAKE12(
     "XSendFilePath",
     xsendfile_cmd_path,
     NULL,
     RSRC_CONF|ACCESS_CONF,
     "Allow to serve files from that Path. Must be absolute"
     ),
-  AP_INIT_TAKE1(
-	"XSendFileTemporaryPath",
-	xsendfile_cmd_path,
-	"is_temp",
-	RSRC_CONF|ACCESS_CONF,
-	"Allow to serve and delete files from that Path. Must be absolute"
-	),
   { NULL }
 };
 static void xsendfile_register_hooks(apr_pool_t *p) {
