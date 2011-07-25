@@ -51,6 +51,7 @@
 #include "http_protocol.h" /* ap_hook_insert_error_filter */
 
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
+#define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -66,7 +67,14 @@ typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t ignoreLM;
   xsendfile_conf_active_t unescape;
   apr_array_header_t *paths;
+  apr_array_header_t *temporaryPaths;
 } xsendfile_conf_t;
+
+/* structure to hold the path and permissions */
+typedef struct xsendfile_path_t {
+  const char *path;
+  int allowFileDelete;
+} xsendfile_path_t;
 
 static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   xsendfile_conf_t *conf;
@@ -78,7 +86,7 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
     conf->enabled =
     XSENDFILE_UNSET;
 
-  conf->paths = apr_array_make(p, 1, sizeof(char*));
+  conf->paths = apr_array_make(p, 1, sizeof(xsendfile_path_t));
 
   return conf;
 }
@@ -141,13 +149,15 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
   return NULL;
 }
 
-static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *arg) {
+static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *path, const char *allowFileDelete) {
   xsendfile_conf_t *conf = (xsendfile_conf_t*)ap_get_module_config(
     cmd->server->module_config,
     &xsendfile_module
     );
-  char **newpath = (char**)apr_array_push(conf->paths);
-  *newpath = apr_pstrdup(cmd->pool, arg);
+
+  xsendfile_path_t *newpath = (xsendfile_path_t*)apr_array_push(conf->paths);
+  newpath->path = apr_pstrdup(cmd->pool, path);
+  newpath->allowFileDelete = (allowFileDelete && strcmp(allowFileDelete, "AllowFileDelete") == 0) ? 1: 0;
 
   return NULL;
 }
@@ -211,13 +221,12 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
 /*
   little helper function to build the file path if available
 */
-static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, /* out */ char **path) {
+static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, int shouldDeleteFile, /* out */ char **path) {
 
-  const char *root = ap_xsendfile_get_orginal_path(r);
   apr_status_t rv;
 
   apr_array_header_t *patharr;
-  const char **paths;
+  const xsendfile_path_t *paths;
   int i;
 
 
@@ -225,23 +234,33 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
 #endif
 
-  /* merge the array */
-  if (root) {
-    patharr = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(char*));
-    *(const char**)(apr_array_push(patharr)) = root;
-    apr_array_cat(patharr, conf->paths);
-  } else {
-    patharr = conf->paths;
+  patharr = conf->paths;
+  if (!shouldDeleteFile) {
+    const char *root = ap_xsendfile_get_orginal_path(r);
+    if (root) {
+      xsendfile_path_t *newpath;
+
+      patharr = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(xsendfile_path_t));
+      newpath = apr_array_push(patharr);
+      newpath->path = root;
+      newpath->allowFileDelete = 0;
+      apr_array_cat(patharr, conf->paths);
+    }
   }
+
   if (patharr->nelts == 0) {
     return APR_EBADPATH;
   }
-  paths = (const char**)patharr->elts;
 
+  paths = (const xsendfile_path_t*)patharr->elts;
   for (i = 0; i < patharr->nelts; ++i) {
+    if (shouldDeleteFile && !paths[i].allowFileDelete){
+      continue;
+    }
+
     if ((rv = apr_filepath_merge(
       path,
-      paths[i],
+      paths[i].path,
       file,
       APR_FILEPATH_TRUENAME | APR_FILEPATH_NOTABOVEROOT,
       r->pool
@@ -275,6 +294,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   char *translated = NULL;
 
   int errcode;
+  int shouldDeleteFile = 0;
 
 #ifdef _DEBUG
   ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
@@ -301,13 +321,32 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     alright, look for x-sendfile
   */
   file = (char*)apr_table_get(r->headers_out, AP_XSENDFILE_HEADER);
-  apr_table_unset(r->headers_out, AP_XSENDFILE_HEADER);
 
   /* cgi/fastcgi will put the stuff into err_headers_out */
   if (!file || !*file) {
     file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILE_HEADER);
-    apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
   }
+
+  /*
+    so...there is no X-SendFile header, check if there is an X-Sendfile-Temporary header
+  */
+  if (!file || !*file) {
+    shouldDeleteFile = 1;
+    file = (char*)apr_table_get(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  }
+  /*
+    Maybe X-Sendfile-Temporary is set via cgi in error_headers_out?
+  */
+  if (!file || !*file) {
+    file = (char*)apr_table_get(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  }
+
+  /* Remove any X-Sendfile headers */
+  apr_table_unset(r->headers_out, AP_XSENDFILE_HEADER);
+  apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
+  apr_table_unset(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  apr_table_unset(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+
   /* nothing there :p */
   if (!file || !*file) {
 #ifdef _DEBUG
@@ -358,7 +397,13 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   }
 
   /* lookup/verification of the given path */
-  rv = ap_xsendfile_get_filepath(r, conf, file, &translated);
+  rv = ap_xsendfile_get_filepath(
+    r,
+    conf,
+    file,
+    shouldDeleteFile,
+    &translated
+    );
   if (rv != OK) {
     ap_log_rerror(
       APLOG_MARK,
@@ -384,6 +429,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     &fd,
     translated,
     APR_READ | APR_BINARY
+    | (shouldDeleteFile ? APR_DELONCLOSE : 0)  //if this is a temporary file, delete on close
 #if APR_HAS_SENDFILE
     | (coreconf->enable_sendfile != ENABLE_SENDFILE_OFF ? APR_SENDFILE_ENABLED : 0)
 #endif
@@ -605,7 +651,7 @@ static const command_rec xsendfile_command_table[] = {
     OR_FILEINFO,
     "On|Off - Unescape/url-decode the value of the header (default: On)"
     ),
-  AP_INIT_TAKE1(
+  AP_INIT_TAKE12(
     "XSendFilePath",
     xsendfile_cmd_path,
     NULL,
