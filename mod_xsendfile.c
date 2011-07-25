@@ -11,11 +11,16 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Contributors:
+ *   Nils Maier <testnutzer123@gmail.com>
+ *   Ben Timby - URL decoding
+ *   Jake Rhee - X-SENDFILE-TEMPORARY
  */
 
 /*
  * mod_xsendfile.c: Process X-SENDFILE header cgi/scripts may set
- *     Written by Nils Maier, testnutzer123 at google mail, March 2006
+ *     Written by Nils Maier, March 2006
  *
  * Whenever an X-SENDFILE header occures in the response headers drop
  * the body and send the replacement file idenfitied by this header instead.
