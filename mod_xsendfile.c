@@ -1,4 +1,5 @@
-/* Copyright 2006-2012 by Nils Maier
+/****
+ * Copyright 2006-2012 by Nils Maier
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +17,9 @@
  *   Nils Maier <testnutzer123@gmail.com>
  *   Ben Timby - URL decoding
  *   Jake Rhee - X-SENDFILE-TEMPORARY
- */
+ ****/
 
-/*
+/****
  * mod_xsendfile.c: Process X-SENDFILE header cgi/scripts may set
  *     Written by Nils Maier, March 2006
  *
@@ -30,7 +31,7 @@
  *
  * Installation:
  *     apxs2 -cia mod_xsendfile.c
- */
+ ****/
 
 /* Version: 1.0 */
 
@@ -124,9 +125,10 @@ static void *xsendfile_config_perdir_create(apr_pool_t *p, char *path) {
   return (void*)xsendfile_config_create(p);
 }
 
-static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int flag) {
+static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv,
+    int flag) {
   xsendfile_conf_t *conf = (xsendfile_conf_t *)perdir_confv;
-  if (cmd->path == NULL) {
+  if (!cmd->path) {
     conf = (xsendfile_conf_t*)ap_get_module_config(
       cmd->server->module_config,
       &xsendfile_module
@@ -148,13 +150,19 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv, int fl
     conf->unescape = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
   }
   else {
-    return apr_psprintf(cmd->pool, "Not a valid command in this context: %s %s", cmd->cmd->name, flag ? "On": "Off");
+    return apr_psprintf(
+      cmd->pool,
+      "Not a valid command in this context: %s %s",
+      cmd->cmd->name,
+      flag ? "On": "Off"
+      );
   }
 
   return NULL;
 }
 
-static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc, const char *path, const char *allowFileDelete) {
+static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc,
+    const char *path, const char *allowFileDelete) {
   xsendfile_conf_t *conf = (xsendfile_conf_t*)ap_get_module_config(
     cmd->server->module_config,
     &xsendfile_module
@@ -226,7 +234,9 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
 /*
   little helper function to build the file path if available
 */
-static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *conf, const char *file, int shouldDeleteFile, /* out */ char **path) {
+static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
+    xsendfile_conf_t *conf, const char *file, int shouldDeleteFile,
+    /* out */ char **path) {
 
   apr_status_t rv;
 
@@ -245,7 +255,11 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r, xsendfile_conf_t *
     if (root) {
       xsendfile_path_t *newpath;
 
-      patharr = apr_array_make(r->pool, conf->paths->nelts + 1, sizeof(xsendfile_path_t));
+      patharr = apr_array_make(
+        r->pool,
+        conf->paths->nelts + 1,
+        sizeof(xsendfile_path_t)
+        );
       newpath = apr_array_push(patharr);
       newpath->path = root;
       newpath->allowFileDelete = 0;
@@ -283,11 +297,11 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   request_rec *r = f->r, *sr = NULL;
 
   xsendfile_conf_t
-    *dconf = (xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module),
-    *sconf = (xsendfile_conf_t *)ap_get_module_config(r->server->module_config, &xsendfile_module),
+    *dconf = ap_get_module_config(r->per_dir_config, &xsendfile_module),
+    *sconf = ap_get_module_config(r->server->module_config, &xsendfile_module),
     *conf = xsendfile_config_merge(r->pool, sconf, dconf);
 
-  core_dir_config *coreconf = (core_dir_config *)ap_get_module_config(r->per_dir_config, &core_module);
+  core_dir_config *coreconf = ap_get_module_config(r->per_dir_config, &core_module);
 
   apr_status_t rv;
   apr_bucket *e;
@@ -302,7 +316,14 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   int shouldDeleteFile = 0;
 
 #ifdef _DEBUG
-  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: output_filter for %s", r->the_request);
+  ap_log_error(
+    APLOG_MARK,
+    APLOG_DEBUG,
+    0,
+    r->server,
+    "xsendfile: output_filter for %s",
+    r->the_request
+    );
 #endif
   /*
     should we proceed with this request?
@@ -313,7 +334,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   if (
     r->status != HTTP_OK
     || r->main
-    || (r->handler && strcmp(r->handler, "default-handler") == 0) /* those table-keys are lower-case, right? */
+    || (r->handler && strcmp(r->handler, "default-handler") == 0)
   ) {
 #ifdef _DEBUG
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: not met [%d]", r->status);
@@ -434,7 +455,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     &fd,
     translated,
     APR_READ | APR_BINARY
-    | (shouldDeleteFile ? APR_DELONCLOSE : 0)  //if this is a temporary file, delete on close
+    | (shouldDeleteFile ? APR_DELONCLOSE : 0)  /* if this is a temporary file, delete on close */
 #if APR_HAS_SENDFILE
     | (coreconf->enable_sendfile != ENABLE_SENDFILE_OFF ? APR_SENDFILE_ENABLED : 0)
 #endif
@@ -557,22 +578,22 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
      * length field is an apr_size_t), split it into several
      * buckets: */
     if (sizeof(apr_off_t) > sizeof(apr_size_t)
-        && finfo.size > AP_MAX_SENDFILE) {
-        apr_off_t fsize = finfo.size;
-        e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
-                                   in->bucket_alloc);
-        while (fsize > AP_MAX_SENDFILE) {
-            apr_bucket *ce;
-            apr_bucket_copy(e, &ce);
-            APR_BRIGADE_INSERT_TAIL(in, ce);
-            e->start += AP_MAX_SENDFILE;
-            fsize -= AP_MAX_SENDFILE;
-        }
-        e->length = (apr_size_t)fsize; /* Resize just the last bucket */
+      && finfo.size > AP_MAX_SENDFILE) {
+      apr_off_t fsize = finfo.size;
+      e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
+                                 in->bucket_alloc);
+      while (fsize > AP_MAX_SENDFILE) {
+          apr_bucket *ce;
+          apr_bucket_copy(e, &ce);
+          APR_BRIGADE_INSERT_TAIL(in, ce);
+          e->start += AP_MAX_SENDFILE;
+          fsize -= AP_MAX_SENDFILE;
+      }
+      e->length = (apr_size_t)fsize; /* Resize just the last bucket */
     }
     else {
-        e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
-                                   r->pool, in->bucket_alloc);
+      e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
+                                 r->pool, in->bucket_alloc);
     }
 
 
@@ -689,3 +710,5 @@ module AP_MODULE_DECLARE_DATA xsendfile_module = {
   xsendfile_command_table,
   xsendfile_register_hooks
 };
+
+/* vim: set ts=2 sw=2 et : */
