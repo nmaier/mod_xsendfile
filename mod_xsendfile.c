@@ -515,7 +515,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     conf->ignoreLM == XSENDFILE_ENABLED
     || (
       !apr_table_get(r->headers_out, "last-modified")
-      && !apr_table_get(r->headers_out, "last-modified")
+      && !apr_table_get(r->err_headers_out, "last-modified")
     )
   ) {
     apr_table_unset(r->err_headers_out, "last-modified");
