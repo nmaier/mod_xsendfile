@@ -244,16 +244,15 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
   const xsendfile_path_t *paths;
   int i;
 
-
-#ifdef _DEBUG
-  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
-#endif
-
   patharr = conf->paths;
   if (!shouldDeleteFile) {
     const char *root = ap_xsendfile_get_orginal_path(r);
     if (root) {
       xsendfile_path_t *newpath;
+
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path is %s", root);
+#endif
 
       patharr = apr_array_make(
         r->pool,
