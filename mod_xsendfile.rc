@@ -20,7 +20,7 @@ BEGIN
             VALUE "FileDescription", "xsendfile_module for Apache"
             VALUE "FileVersion", "1.0"
             VALUE "InternalName", "mod_xsendfile.so"
-            VALUE "LegalCopyright", "Copyright 2006-2010 Nils Maier"
+            VALUE "LegalCopyright", "Copyright 2006-2012 Nils Maier"
             VALUE "OriginalFilename", "mod_xsendfile.so"
             VALUE "ProductName", "Apache HTTP Server"
             VALUE "ProductVersion", "1.0"
