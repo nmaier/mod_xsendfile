@@ -5,51 +5,42 @@
   <title>mod_xsendfile for Apache2</title>
   <meta content="Nils Maier" name="author" />
   <style media="all" type="text/css">
-  body {
-    width: 80ex;
+  html, body {
+    background: white;
     font-family: sans-serif;
+    padding: 0;
+    margin: 0;
   }
-  section {
-    margin-bottom: 2em;
+  article {
+    max-width: 900px;
+    margin: 0px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 2em;
+    padding-top: 1ex;
+    box-shadow: 0px 0px 30px darkgray;
   }
   h1, h2, h3, h4, h5, h6 {
-    padding: 0.3em 0.2em 0.3em 0.7em;
-    color: white;
-    font-size: larger;
-    background-color: rgb(85, 118, 151);
-    margin-bottom: 12pt;
-    margin-top: 8pt;
+    font-family: "Trebuchet MS","Andale Mono",sans-serif;
+    text-shadow: 1px 1px 1px lightgray;
   }
-  h1 {
-    font-size: x-large;
-    background-color: rgb(64, 88, 113);
+  h1, h2 {
+    border-bottom: 1px solid black;
   }
-  h3 {
-    font-size: medium;
-    background-color: rgb(229, 236, 243);
-    color: rgb(102, 102, 102);
-  }
-  h4 {
-    font-size: small;
-  }
-  p, li {
-    margin-top: 4pt; margin-bottom: 6pt;
-  }
-  .code {
+  pre,
+  .code,
+  table.directive {
     border: 1px solid gray;
     padding: 1ex;
-  }
-  table.directive {
     text-align: left;
-    width: 100%;
-    border: 1px solid black;
-    border-radius: 6px;
-    padding: 1ex;
-    margin: 0;
-    margin-bottom: 1em;
+    width: 80%;
   }
-  .checksum {
-    font-size: x-small;
+  .table.directive th {
+    width: 15%;
+  }
+  pre {
+    background-color: #333333;
+    color: white;
   }
   .remark {
     color: red;
@@ -317,12 +308,9 @@
 
       <p><code>.htaccess</code></p>
 
-      <p class="code"><code>&lt;Files out.php&gt;<br />
-
-      XSendFile on
-      <br />
-
-      &lt;/Files&gt;</code></p>
+      <pre>&lt;Files out.php&gt;
+XSendFile on
+&lt;/Files&gt;</pre>
 
       <p><code>out.php</code></p>
 
