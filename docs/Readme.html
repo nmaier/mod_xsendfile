@@ -37,7 +37,7 @@
   }
   .code {
     border: 1px solid gray;
-    padding: 2pt;
+    padding: 1ex;
   }
   table.directive {
     text-align: left;
@@ -283,19 +283,18 @@
 
       <h4>Remarks - Inheritance</h4>
       <p>The white list "inherits" entries from higher level configuration.<br/>
-      <pre>XSendFilePath /tmp
-      &lt;VirtualHost *&gt;
-        ServerName someserver
-        XSendFilePath /home/userxyz
-      &lt;/VirtualHost&gt;
-      &lt;VirtualHost *&gt;
-        ServerName anotherserver
-        XSendFilePath /var/www/somesite/
-        &lt;Directory /var/www/somesite/fastcgis&gt;
-          XSendFilePath /var/www/shared
-        &lt;/Directory&gt;
-      &lt;/VirtualHost&gt;
-      </pre>
+      <pre class="code">XSendFilePath /tmp
+&lt;VirtualHost *&gt;
+  ServerName someserver
+  XSendFilePath /home/userxyz
+&lt;/VirtualHost&gt;
+&lt;VirtualHost *&gt;
+  ServerName anotherserver
+  XSendFilePath /var/www/somesite/
+  &lt;Directory /var/www/somesite/fastcgis&gt;
+    XSendFilePath /var/www/shared
+  &lt;/Directory&gt;
+&lt;/VirtualHost&gt;</pre>
       <p>Above example will give:</code>
       <ul>
         <li>*<ul>
