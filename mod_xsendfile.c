@@ -364,6 +364,47 @@ static int ap_xsendfile_deflate(request_rec *r, const char *path, const char *co
 #endif /* MOD_XSENDFILE_AUTO_GZIP */
 }
 
+static int ap_xsendfile_accepts_gzip(request_rec *r) {
+  char *token;
+  const char *accepts;
+
+  /* Accept-Encoding logic copied from mod_deflate.c: */
+  /* Even if we don't accept this request based on it not having
+   * the Accept-Encoding, we need to note that we were looking
+   * for this header and downstream proxies should be aware of that.
+   */
+  apr_table_mergen(r->headers_out, "Vary", "Accept-Encoding");
+
+  accepts = apr_table_get(r->headers_in, "Accept-Encoding");
+  if (accepts == NULL) {
+    /* just pass-through the sendfile untouched */
+    return 0;
+  }
+ 
+  token = ap_get_token(r->pool, &accepts, 0);
+  while (token && token[0] && strcasecmp(token, "gzip")) {
+    /* skip parameters, XXX: ;q=foo evaluation? */
+    while (*accepts == ';') { 
+      ++accepts;
+      token = ap_get_token(r->pool, &accepts, 1);
+    }
+ 
+    /* retrieve next token */
+    if (*accepts == ',') {
+      ++accepts;
+    }
+    token = (*accepts) ? ap_get_token(r->pool, &accepts, 0) : NULL;
+  }
+  
+  /* No acceptable token found. */
+  if (token == NULL || token[0] == '\0') {
+    return 0;
+  }
+
+  /* found gzip token */
+  return 1;
+}
+
 static void ap_xsendfile_get_compressed_filepath(request_rec *r, /* out */ char **adjusted_path) {
   size_t pathlen;
   const char *path;
@@ -372,6 +413,10 @@ static void ap_xsendfile_get_compressed_filepath(request_rec *r, /* out */ char 
   struct stat compressed_stat;
 
   path = *adjusted_path;
+
+  if (!ap_xsendfile_accepts_gzip(r)) {
+    return;
+  }
 
   if (0 != stat(path, &original_stat)) {
 #ifdef _DEBUG
