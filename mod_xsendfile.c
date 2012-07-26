@@ -56,6 +56,45 @@
 #include "util_filter.h"
 #include "http_protocol.h" /* ap_hook_insert_error_filter */
 
+#define HACKY_GZIP 1
+
+#ifdef MOD_XSENDFILE_AUTO_GZIP
+#include "zlib.h"
+
+
+/* The only real dependency on ZUTIL.H is for the OS_CODE define */
+/* ( which is part of the LZ77 deflate() header ) but the OS_CODE */
+/* definitions are complex so for now, ZUTIL.H has to be required. */
+
+#include "zutil.h" /* Contains OS_CODE definition(s) */
+
+#define MOD_XSENDFILE_ZLIB_WINDOWSIZE -15
+#define MOD_XSENDFILE_ZLIB_CFACTOR    9
+#define MOD_XSENDFILE_ZLIB_BSIZE      8096
+
+/* ZLIB's deflate() compression algorithm uses the same */
+/* 0-9 based scale that GZIP does where '1' is 'Best speed' */
+/* and '9' is 'Best compression'. since the compressed files */
+/* are essentially cached, using a default value of 9 */
+
+#define MOD_XSENDFILE_DEFLATE_DEFAULT_COMPRESSION_LEVEL 9
+
+static int zlib_gzip_magic[2] = { 0x1f, 0x8b };
+
+typedef struct zlib_context_t
+{
+    z_stream strm;
+    char buffer[MOD_XSENDFILE_ZLIB_BSIZE];
+    unsigned long crc;
+} zlib_context_t;
+
+#endif
+
+#ifdef HACKY_GZIP
+#define MOD_XSENDFILE_AUTO_GZIP 1
+#include <unistd.h>
+#endif
+
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
 #define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
 
@@ -231,6 +270,241 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
   return rv;
 }
 
+/**
+ * caches the compressed response for path @ compressed_path
+ * @return 1 if compressed successfully, 0 otherwise
+ */
+static int ap_xsendfile_deflate(request_rec *r, const char *path, const char *compressed_path, int mode) {
+#ifdef MOD_XSENDFILE_AUTO_GZIP
+  const char *tmp_compress_path;
+
+#ifndef HACKY_GZIP
+  // zlib scratch variables
+  int compression = -1;
+
+  // cache compressed version of file into gzip format using zlib
+  int ret, flush;
+  unsigned have;
+  zlib_context_t ctx;
+
+  if (compression == -1) {
+    compression = MOD_XSENDFILE_DEFLATE_DEFAULT_COMPRESSION_LEVEL;
+  }
+
+  /* allocate deflate state */
+  ctx.strm.zalloc = Z_NULL;
+  ctx.strm.zfree = Z_NULL;
+  ctx.strm.opaque = Z_NULL;
+  ret = deflateInit2(&strm, compression, Z_DEFLATED, MOD_XSENDFILE_ZLIB_WINDOWSIZE, MOD_XSENDFILE_ZLIB_CFACTOR, Z_DEFAULT_STRATEGY);
+
+  if (ret != Z_OK) {
+    return 0;
+  }
+
+  do {
+    ctx.strm.avail_in = ;
+  } while (flush != Z_FINISH);
+
+  return 1;
+#else /* HACKY_GZIP */
+  const char *compress_cmd;
+  pid_t child;
+  pid_t wait_child;
+  int wait_status;
+  int outf;
+
+  tmp_compress_path = apr_pstrcat(r->pool, compressed_path, ".tmp", NULL);
+
+  outf = creat(tmp_compress_path, mode);
+  if (outf == -1) {
+    char *errmsg = strerror(errno);
+    exit(1);
+  }
+
+  child = fork();
+  if (child == -1) {
+    return 0;
+  }
+
+  if (child == 0) {
+    // child - exec the gzip command
+    char *const argv[] = { "/bin/gzip", "--stdout", "-9", (char * const)path };
+
+    if (-1 == dup2(outf, STDOUT_FILENO)) {
+      exit(1);
+    }
+
+    execv("/bin/gzip", argv);
+    // some error occured
+    exit(1);
+  }
+
+  if (-1 == waitpid(child, &wait_status, 0)) {
+    return 0;
+  }
+
+  if (!WIFEXITED(wait_status)) {
+    return 0;
+  } else {
+    int exit_status = WEXITSTATUS(wait_status);
+    // WTF: why does gzip exit with 1 when no error occured???
+    if (exit_status != 0 && exit_status != 1) {
+      return 0;
+    }
+  }
+
+  if (0 != rename(tmp_compress_path, compressed_path)) {
+    unlink(tmp_compress_path);
+    return 0;
+  }
+
+  return 1;
+#endif /* HACKY_GZIP */
+
+#endif /* MOD_XSENDFILE_AUTO_GZIP */
+}
+
+static int ap_xsendfile_accepts_gzip(request_rec *r) {
+  char *token;
+  const char *accepts;
+
+  /* Accept-Encoding logic copied from mod_deflate.c: */
+  /* Even if we don't accept this request based on it not having
+   * the Accept-Encoding, we need to note that we were looking
+   * for this header and downstream proxies should be aware of that.
+   */
+  apr_table_mergen(r->headers_out, "Vary", "Accept-Encoding");
+
+  accepts = apr_table_get(r->headers_in, "Accept-Encoding");
+  if (accepts == NULL) {
+    /* just pass-through the sendfile untouched */
+    return 0;
+  }
+ 
+  token = ap_get_token(r->pool, &accepts, 0);
+  while (token && token[0] && strcasecmp(token, "gzip")) {
+    /* skip parameters, XXX: ;q=foo evaluation? */
+    while (*accepts == ';') { 
+      ++accepts;
+      token = ap_get_token(r->pool, &accepts, 1);
+    }
+ 
+    /* retrieve next token */
+    if (*accepts == ',') {
+      ++accepts;
+    }
+    token = (*accepts) ? ap_get_token(r->pool, &accepts, 0) : NULL;
+  }
+  
+  /* No acceptable token found. */
+  if (token == NULL || token[0] == '\0') {
+    return 0;
+  }
+
+  /* found gzip token */
+  return 1;
+}
+
+static void ap_xsendfile_get_compressed_filepath(request_rec *r, /* out */ char **adjusted_path) {
+  size_t pathlen;
+  const char *path;
+  char *deflate_path;
+  struct stat original_stat;
+  struct stat compressed_stat;
+
+  path = *adjusted_path;
+
+  if (!ap_xsendfile_accepts_gzip(r)) {
+    return;
+  }
+
+  if (0 != stat(path, &original_stat)) {
+#ifdef _DEBUG
+    char errmsg[128];
+    apr_strerror(apr_get_os_error(), errmsg, sizeof(errmsg) - 1);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: can't stat %s: %s", path, errmsg);
+#endif
+    return;
+  }
+
+  deflate_path = apr_pstrcat(r->pool, path, ".gz", NULL);
+
+  if (0 != stat(deflate_path, &compressed_stat) || compressed_stat.st_mtime < original_stat.st_mtime) {
+#ifndef MOD_XSENDFILE_AUTO_GZIP
+    // no zlib support so can't compress the file
+#ifdef _DEBUG
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: zlib not available - can't compress %s", path);
+#endif
+    return;
+#endif
+    int compressible_path;
+    int i;
+    int mode = original_stat.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO);
+
+    // TODO: make this configurable pattern-matching
+    const char *compressible_extensions [] = {
+      ".css",
+      ".js",
+      ".html",
+      ".json",
+    };
+
+    size_t n_compressible_extensions = sizeof(compressible_extensions) / sizeof(compressible_extensions[0]);
+
+    // compressed file doesn't exist or is older than the source file
+    // check to make sure that it's compressible
+
+    pathlen = strlen(path);
+
+    compressible_path = 0;
+    for (i = 0; i < n_compressible_extensions; i++) {
+      const char *compressible_extension = compressible_extensions[i];
+      size_t extension_length = strlen(compressible_extension);
+      if (pathlen < extension_length) {
+	continue;
+      }
+
+      if (strcmp(path + pathlen - extension_length, compressible_extension) == 0) {
+	compressible_path = 1;
+	break;
+      }
+    }
+
+    if (!compressible_path) {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: path %s doesn't have a compressible extension", path);
+#endif
+      return;
+    }
+
+    // do compression since file to serve is allowed to be compressible
+    if (!ap_xsendfile_deflate(r, path, deflate_path, mode)) {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: failed to compress %s to %s", path, deflate_path);
+#endif
+      return;
+    }
+
+    if (0 != stat(deflate_path, &compressed_stat)) {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: failed to stat %s after compression succeeded?", deflate_path);
+#endif
+      return;
+    }
+  }
+
+  {
+    *adjusted_path = deflate_path;
+    apr_table_set(r->headers_out, "Content-Length", apr_psprintf(r->pool, "%lu", (unsigned long)compressed_stat.st_size));
+    apr_table_set(r->headers_out, "Content-Encoding", "gzip");
+#ifdef _DEBUG
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: serving up encoded file %s", deflate_path);
+#endif
+  }
+
+  return;
+}
+
 /*
   little helper function to build the file path if available
 */
@@ -283,11 +557,21 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
       APR_FILEPATH_TRUENAME | APR_FILEPATH_NOTABOVEROOT,
       r->pool
     )) == OK) {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: finished merging at %d/%d elements", i, patharr->nelts);
+#endif
+
       break;
+    } else {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: merged %d/%d elements (component = %s).  path is now %s", i, patharr->nelts, paths[i].path, *path);
+#endif
     }
   }
   if (rv != OK) {
     *path = NULL;
+  } else {
+    ap_xsendfile_get_compressed_filepath(r, path);
   }
   return rv;
 }
@@ -310,6 +594,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   char *file = NULL;
   char *translated = NULL;
+  char *translatedEncoding = NULL;
 
   int errcode;
   int shouldDeleteFile = 0;
@@ -442,10 +727,6 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     ap_die(HTTP_NOT_FOUND, r);
     return HTTP_NOT_FOUND;
   }
-
-#ifdef _DEBUG
-  ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: found %s", translated);
-#endif
 
   /*
     try open the file
