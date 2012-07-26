@@ -364,11 +364,14 @@ static int ap_xsendfile_deflate(request_rec *r, const char *path, const char *co
 #endif /* MOD_XSENDFILE_AUTO_GZIP */
 }
 
-static void ap_xsendfile_check_compressed(request_rec *r, const char *path, char **compressionType) {
+static void ap_xsendfile_get_compressed_filepath(request_rec *r, /* out */ char **adjusted_path) {
   size_t pathlen;
+  const char *path;
   char *deflate_path;
   struct stat original_stat;
   struct stat compressed_stat;
+
+  path = *adjusted_path;
 
   if (0 != stat(path, &original_stat)) {
 #ifdef _DEBUG
@@ -436,9 +439,23 @@ static void ap_xsendfile_check_compressed(request_rec *r, const char *path, char
 #endif
       return;
     }
+
+    if (0 != stat(deflate_path, &compressed_stat)) {
+#ifdef _DEBUG
+      ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: failed to stat %s after compression succeeded?", deflate_path);
+#endif
+      return;
+    }
   }
 
-  *compressionType = "gzip";
+  {
+    *adjusted_path = deflate_path;
+    apr_table_set(r->headers_out, "Content-Length", apr_psprintf(r->pool, "%lu", (unsigned long)compressed_stat.st_size));
+    apr_table_set(r->headers_out, "Content-Encoding", "gzip");
+#ifdef _DEBUG
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: serving up encoded file %s", deflate_path);
+#endif
+  }
 
   return;
 }
@@ -448,7 +465,7 @@ static void ap_xsendfile_check_compressed(request_rec *r, const char *path, char
 */
 static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
     xsendfile_conf_t *conf, const char *file, int shouldDeleteFile,
-    /* out */ char **path, /* out */ char **compressionType) {
+    /* out */ char **path) {
 
   apr_status_t rv;
 
@@ -509,7 +526,7 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
   if (rv != OK) {
     *path = NULL;
   } else {
-    ap_xsendfile_check_compressed(r, *path, compressionType);
+    ap_xsendfile_get_compressed_filepath(r, path);
   }
   return rv;
 }
@@ -650,8 +667,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     conf,
     file,
     shouldDeleteFile,
-    &translated,
-    &translatedEncoding
+    &translated
     );
   if (rv != OK) {
     ap_log_rerror(
@@ -665,12 +681,6 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     ap_remove_output_filter(f);
     ap_die(HTTP_NOT_FOUND, r);
     return HTTP_NOT_FOUND;
-  }
-
-  if (translatedEncoding) {
-    translated = apr_pstrcat(r->pool, translated, ".gz", NULL);
-    apr_table_set(r->headers_out, "Content-Encoding", translatedEncoding);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "xsendfile: found pre-encoded file %s", translated);
   }
 
   /*
