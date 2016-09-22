@@ -58,6 +58,7 @@
 
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
 #define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
+#define AP_XSENDFILE_REQUEST_HEADER "X-SENDFILE-ENABLED"
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -69,6 +70,7 @@ typedef enum {
 
 typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t enabled;
+  xsendfile_conf_active_t addOurHeader;
   xsendfile_conf_active_t ignoreETag;
   xsendfile_conf_active_t ignoreLM;
   xsendfile_conf_active_t unescape;
@@ -111,6 +113,7 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
 
   XSENDFILE_CFLAG(enabled);
+  XSENDFILE_CFLAG(addOurHeader);
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
   XSENDFILE_CFLAG(unescape);
@@ -139,6 +142,9 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv,
   }
   if (!strcasecmp(cmd->cmd->name, "xsendfile")) {
     conf->enabled = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
+  }
+  else if (!strcasecmp(cmd->cmd->name, "XSendFileAddRequestHeader")) {
+    conf->addOurHeader = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
   }
   else if (!strcasecmp(cmd->cmd->name, "xsendfileignoreetag")) {
     conf->ignoreETag = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
@@ -292,8 +298,17 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
   return rv;
 }
 
+static int ap_xsendfile_add_our_header(request_rec *r) {
+  xsendfile_conf_t    *conf = ap_get_module_config(r->per_dir_config, &xsendfile_module);
+  
+  if ( conf->addOurHeader != XSENDFILE_DISABLED ) {
+    if ( conf->enabled ) apr_table_setn(r->headers_in, AP_XSENDFILE_REQUEST_HEADER, "1");
+  }
+  return OK;
+}
+
 static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigade *in) {
-  request_rec *r = f->r, *sr = NULL;
+  request_rec *r = f->r;
 
   xsendfile_conf_t
     *dconf = ap_get_module_config(r->per_dir_config, &xsendfile_module),
@@ -656,6 +671,13 @@ static const command_rec xsendfile_command_table[] = {
     "On|Off - Enable/disable(default) processing"
     ),
   AP_INIT_FLAG(
+    "XSendFileAddRequestHeader",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Enable(default)/disable addition of X-Sendfile-Enabled header on requests"
+    ),
+  AP_INIT_FLAG(
     "XSendFileIgnoreEtag",
     xsendfile_cmd_flag,
     NULL,
@@ -691,6 +713,13 @@ static void xsendfile_register_hooks(apr_pool_t *p) {
     ap_xsendfile_output_filter,
     NULL,
     AP_FTYPE_CONTENT_SET
+    );
+    
+  ap_hook_fixups(
+    ap_xsendfile_add_our_header,
+    NULL,
+    NULL,
+    APR_HOOK_LAST
     );
 
   ap_hook_insert_filter(
