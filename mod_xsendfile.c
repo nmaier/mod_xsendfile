@@ -17,6 +17,7 @@
  *   Nils Maier <testnutzer123@gmail.com>
  *   Ben Timby - URL decoding
  *   Jake Rhee - X-SENDFILE-TEMPORARY
+ *   Jeff Frey - X-SENDFILE-BYTE-RANGE, X-SENDFILE-ENABLED (request header)
  ****/
 
 /****
@@ -25,6 +26,10 @@
  *
  * Whenever an X-SENDFILE header occures in the response headers drop
  * the body and send the replacement file idenfitied by this header instead.
+ *
+ * Limited support for partial content with Content-range; upstream
+ * handler is responsible for validating the request and adding the
+ * Accept-ranges and X-Sendfile-Byte-Range headers to its response.
  *
  * Method inspired by lighttpd <http://lighttpd.net/>
  * Code inspired by mod_headers, mod_rewrite and such
@@ -56,9 +61,11 @@
 #include "util_filter.h"
 #include "http_protocol.h" /* ap_hook_insert_error_filter */
 
+#define AP_XSENDFILE_REQUEST_HEADER "X-SENDFILE-ENABLED"
+
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
 #define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
-#define AP_XSENDFILE_REQUEST_HEADER "X-SENDFILE-ENABLED"
+#define AP_XSENDFILE_BYTE_RANGE_HEADER "X-SENDFILE-BYTE-RANGE"
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -71,6 +78,7 @@ typedef enum {
 typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t enabled;
   xsendfile_conf_active_t addOurHeader;
+  xsendfile_conf_active_t ignoreByteRange;
   xsendfile_conf_active_t ignoreETag;
   xsendfile_conf_active_t ignoreLM;
   xsendfile_conf_active_t unescape;
@@ -89,6 +97,8 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
 
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
   conf->unescape =
+    conf->addOurHeader =
+    conf->ignoreByteRange =
     conf->ignoreETag =
     conf->ignoreLM =
     conf->enabled =
@@ -114,6 +124,7 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
 
   XSENDFILE_CFLAG(enabled);
   XSENDFILE_CFLAG(addOurHeader);
+  XSENDFILE_CFLAG(ignoreByteRange);
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
   XSENDFILE_CFLAG(unescape);
@@ -145,6 +156,9 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv,
   }
   else if (!strcasecmp(cmd->cmd->name, "XSendFileAddRequestHeader")) {
     conf->addOurHeader = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
+  }
+  else if (!strcasecmp(cmd->cmd->name, "XSendFileIgnoreReturnedByteRange")) {
+    conf->ignoreByteRange = flag ? XSENDFILE_ENABLED : XSENDFILE_DISABLED;
   }
   else if (!strcasecmp(cmd->cmd->name, "xsendfileignoreetag")) {
     conf->ignoreETag = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
@@ -299,7 +313,10 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
 }
 
 static int ap_xsendfile_add_our_header(request_rec *r) {
-  xsendfile_conf_t    *conf = ap_get_module_config(r->per_dir_config, &xsendfile_module);
+  xsendfile_conf_t
+    *dconf = ap_get_module_config(r->per_dir_config, &xsendfile_module),
+    *sconf = ap_get_module_config(r->server->module_config, &xsendfile_module),
+    *conf = xsendfile_config_merge(r->pool, sconf, dconf);
   
   if ( conf->addOurHeader != XSENDFILE_DISABLED ) {
     if ( conf->enabled ) apr_table_setn(r->headers_in, AP_XSENDFILE_REQUEST_HEADER, "1");
@@ -325,6 +342,8 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   char *file = NULL;
   char *translated = NULL;
+  
+  const char *byteRangeHeader = NULL;
 
   int errcode;
   int shouldDeleteFile = 0;
@@ -386,6 +405,18 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   apr_table_unset(r->err_headers_out, AP_XSENDFILE_HEADER);
   apr_table_unset(r->headers_out, AP_XSENDFILETEMPORARY_HEADER);
   apr_table_unset(r->err_headers_out, AP_XSENDFILETEMPORARY_HEADER);
+  
+  /* Retrieve any X-Sendfile-Byte-Range header and then drop it */
+  byteRangeHeader = apr_table_get(r->headers_out, AP_XSENDFILE_BYTE_RANGE_HEADER);
+  if ( byteRangeHeader ) {
+    apr_table_unset(r->headers_out, AP_XSENDFILE_BYTE_RANGE_HEADER);
+    apr_table_unset(r->err_headers_out, AP_XSENDFILE_BYTE_RANGE_HEADER);
+  } else {
+    byteRangeHeader = apr_table_get(r->err_headers_out, AP_XSENDFILE_BYTE_RANGE_HEADER);
+    if ( byteRangeHeader ) {
+      apr_table_unset(r->err_headers_out, AP_XSENDFILE_BYTE_RANGE_HEADER);    
+    }
+  }
 
   /* nothing there :p */
   if (!file || !*file) {
@@ -567,8 +598,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     apr_table_unset(r->err_headers_out, "etag");
     ap_set_etag(r);
   }
-
-  ap_set_content_length(r, finfo.size);
+  
 
   /* cache or something? */
   if ((errcode = ap_meets_conditions(r)) != OK) {
@@ -587,26 +617,140 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
     r->status = errcode;
   }
   else {
+    apr_off_t sendFromOffset, sendByteCount;
+    const char *acceptRange;
+    
+    /* was a byte range handed to us? */
+    if ( byteRangeHeader && (conf->ignoreByteRange != XSENDFILE_ENABLED) && 
+         ((acceptRange = apr_table_get(r->headers_out, "Accept-ranges")) ||
+          (acceptRange = apr_table_get(r->err_headers_out, "Accept-ranges"))
+         )
+    ) {
+      apr_int64_t dummy;
+      char *endptr = (char*)byteRangeHeader;
+      int foundStart = 0, foundEnd = 0, isNegative = (*endptr == '-');
+      char *byteRangeProblem = "";
+      
+      /* First integer = start of range: */
+      dummy = apr_strtoi64(byteRangeHeader, &endptr, 10);
+      if ( endptr > byteRangeHeader ) {
+        if ( dummy < 0 ) {
+          /* Negative number implies offset from end-of-file */
+          if ( -dummy < finfo.size ) {
+            sendFromOffset = finfo.size + dummy;
+            sendByteCount = -dummy;
+            foundStart = foundEnd = 1;
+          } else {
+            byteRangeProblem = " - negative starting index exceeds size of file";
+          }
+        }
+        else if ( (dummy == 0) && isNegative ) {
+          byteRangeProblem = " - zero bytes indicated";
+        }
+        else if ( *endptr == '-' ) {
+          if ( dummy < finfo.size ) {
+            sendFromOffset = dummy;
+            foundStart = 1;
+          } else {
+            byteRangeProblem = " - starting index past end-of-file";
+          }
+        }
+      }
+      if ( foundStart ) {
+        if ( ! foundEnd ) {
+          /* Figure out where the range ends: */
+          endptr++;
+          if ( *endptr == '\0' ) {
+            /* A value lacking anything after the dash (-) indicates the end of the byte range.  If the
+               starting offset was zero, then that's just the whole file anyway: */
+            sendByteCount = finfo.size - sendFromOffset;
+            foundEnd = 1;
+          } else {
+            char  *prevEndPtr = endptr;
+            
+            dummy = apr_strtoi64(prevEndPtr, &endptr, 10);
+            if ( endptr > prevEndPtr ) {
+              if ( dummy >= sendFromOffset ) {
+                if ( dummy < finfo.size ) {
+                  sendByteCount = dummy - sendFromOffset + 1;
+                  foundEnd = 1;
+                } else {
+                  byteRangeProblem = " - ending index past end-of-file";
+                }
+              } else {
+                byteRangeProblem = " - ending index before starting index";
+              }
+            }
+          }
+        }
+      }
+      if ( foundStart && foundEnd ) {
+        if ( sendFromOffset > 0 && sendByteCount != finfo.size ) {
+          /* Set the Content-range header and be sure we're returning a 206 status code: */
+          apr_off_t lastByte = sendFromOffset + sendByteCount - 1;
+          char *contentRangeHeader = apr_psprintf(r->pool, "bytes %pF-%pF/%pF", &sendFromOffset, &lastByte, &finfo.size);
+
+#ifdef _DEBUG
+          ap_log_error(
+            APLOG_MARK,
+            APLOG_WARNING,
+            0,
+            r->server,
+            "xsendfile: limited byte range to %pF - %pF",
+            &sendFromOffset,
+            &lastByte
+            );
+#endif
+          apr_table_setn(r->headers_out, "Content-range", contentRangeHeader);
+          apr_table_unset(r->err_headers_out, "Content-range");
+          r->status = HTTP_PARTIAL_CONTENT;
+        } else {
+          /* Send the whole thing: */
+          r->status = HTTP_OK;
+        }
+      } else {
+        ap_log_rerror(
+          APLOG_MARK,
+          APLOG_ERR,
+          0,
+          r,
+          "xsendfile: invalid X-Sendfile-Byte-Range '%s'%s",
+          byteRangeHeader,
+          byteRangeProblem
+          );
+        ap_remove_output_filter(f);
+        ap_die(HTTP_INTERNAL_SERVER_ERROR, r);
+        return HTTP_INTERNAL_SERVER_ERROR;
+      }
+    } else {
+      /* Send the whole thing: */
+      sendFromOffset = 0;
+      sendByteCount = finfo.size;
+      r->status = HTTP_OK;
+    }
+    
+    /* Note the size of our response: */
+    ap_set_content_length(r, sendByteCount);
+    
     /* For platforms where the size of the file may be larger than
      * that which can be stored in a single bucket (where the
      * length field is an apr_size_t), split it into several
      * buckets: */
     if (sizeof(apr_off_t) > sizeof(apr_size_t)
-      && finfo.size > AP_MAX_SENDFILE) {
-      apr_off_t fsize = finfo.size;
-      e = apr_bucket_file_create(fd, 0, AP_MAX_SENDFILE, r->pool,
+      && sendByteCount > AP_MAX_SENDFILE) {
+      e = apr_bucket_file_create(fd, sendFromOffset, AP_MAX_SENDFILE, r->pool,
                                  in->bucket_alloc);
-      while (fsize > AP_MAX_SENDFILE) {
+      while (sendByteCount > AP_MAX_SENDFILE) {
           apr_bucket *ce;
           apr_bucket_copy(e, &ce);
           APR_BRIGADE_INSERT_TAIL(in, ce);
           e->start += AP_MAX_SENDFILE;
-          fsize -= AP_MAX_SENDFILE;
+          sendByteCount -= AP_MAX_SENDFILE;
       }
-      e->length = (apr_size_t)fsize; /* Resize just the last bucket */
+      e->length = (apr_size_t)sendByteCount; /* Resize just the last bucket */
     }
     else {
-      e = apr_bucket_file_create(fd, 0, (apr_size_t)finfo.size,
+      e = apr_bucket_file_create(fd, sendFromOffset, (apr_size_t)sendByteCount,
                                  r->pool, in->bucket_alloc);
     }
 
@@ -676,6 +820,13 @@ static const command_rec xsendfile_command_table[] = {
     NULL,
     OR_FILEINFO,
     "On|Off - Enable(default)/disable addition of X-Sendfile-Enabled header on requests"
+    ),
+  AP_INIT_FLAG(
+    "XSendFileIgnoreReturnedByteRange",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Enable(default)/disable partial content response using byte range header from upstream handlers"
     ),
   AP_INIT_FLAG(
     "XSendFileIgnoreEtag",
