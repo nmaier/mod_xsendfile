@@ -319,7 +319,7 @@ static int ap_xsendfile_add_our_header(request_rec *r) {
     *conf = xsendfile_config_merge(r->pool, sconf, dconf);
   
   if ( conf->addOurHeader != XSENDFILE_DISABLED ) {
-    if ( conf->enabled ) apr_table_setn(r->headers_in, AP_XSENDFILE_REQUEST_HEADER, "1");
+    if ( conf->enabled != XSENDFILE_DISABLED ) apr_table_setn(r->headers_in, AP_XSENDFILE_REQUEST_HEADER, "1");
   }
   return OK;
 }
