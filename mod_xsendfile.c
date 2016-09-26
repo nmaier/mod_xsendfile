@@ -17,6 +17,7 @@
  *   Nils Maier <testnutzer123@gmail.com>
  *   Ben Timby - URL decoding
  *   Jake Rhee - X-SENDFILE-TEMPORARY
+ *   Jeff Frey - X-SENDFILE-IS-ENABLED request header addition
  ****/
 
 /****
@@ -58,6 +59,8 @@
 
 #define AP_XSENDFILE_HEADER "X-SENDFILE"
 #define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
+
+#define AP_XSENDFILE_IS_ENABLED_HEADER "X-SENDFILE-IS-ENABLED"
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -290,6 +293,19 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
     *path = NULL;
   }
   return rv;
+}
+
+static int ap_xsendfile_add_request_header(request_rec *r) {
+  xsendfile_conf_active_t enabled = ((xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module))->enabled;
+  if (XSENDFILE_UNSET == enabled) {
+    enabled = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->enabled;
+  }
+
+  if (XSENDFILE_ENABLED != enabled) {
+    return;
+  }
+  apr_table_setn(r->headers_in, AP_XSENDFILE_IS_ENABLED_HEADER, "1");
+  return OK;
 }
 
 static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigade *in) {
@@ -691,6 +707,13 @@ static void xsendfile_register_hooks(apr_pool_t *p) {
     ap_xsendfile_output_filter,
     NULL,
     AP_FTYPE_CONTENT_SET
+    );
+
+  ap_hook_fixups(
+    ap_xsendfile_add_request_header,
+    NULL,
+    NULL,
+    APR_HOOK_LAST
     );
 
   ap_hook_insert_filter(

@@ -112,8 +112,17 @@
 
       <h3>Headers</h3>
       <ul>
-        <li><code>X-SENDFILE</code> - Send the file referenced by this headers instead of the current response body</li>
-        <li><code>X-SENDFILE-TEMPORARY</code> - Like <code>X-SENDFILE</code>, but the file will be deleted afterwards. The file must originate from a path that has the <code>AllowFileDelete</code> flag set.</li>
+        <li>Added to request (input) headers:
+          <ul>
+            <li><code>X-SENDFILE-IS-ENABLED</code> - the filter is enabled for this request</li>
+          </ul>
+        </li>
+        <li>Returned by output handler:
+          <ul>
+            <li><code>X-SENDFILE</code> - Send the file referenced by this headers instead of the current response body</li>
+            <li><code>X-SENDFILE-TEMPORARY</code> - Like <code>X-SENDFILE</code>, but the file will be deleted afterwards. The file must originate from a path that has the <code>AllowFileDelete</code> flag set.</li>
+          </ul>
+        </li>
       </ul>
 
       <h3>XSendFile</h3>
