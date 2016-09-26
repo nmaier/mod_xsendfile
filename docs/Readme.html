@@ -83,7 +83,7 @@
         <li>Uses apache internals</li>
         <li>Optimal delivery through sendfile and mmap (if available).</li>
         <li>Sets correct cache headers such as Etag and If-Modified-Since as if the file was statically served.</li>
-        <li>Processes cache headers such as If-None-Match or If-Modified-Since.</li> 
+        <li>Processes cache headers such as If-None-Match or If-Modified-Since.</li>
         <li>Support for ranges.</li>
       </ul>
     </section>
@@ -111,19 +111,17 @@
       <h2>Configuration</h2>
 
       <h3>Headers</h3>
+
+      The following headers are added to requests for which this module is enabled:
       <ul>
-        <li>Added to request (input) headers:
-          <ul>
-            <li><code>X-SENDFILE-IS-ENABLED</code> - the filter is enabled for this request</li>
-          </ul>
-        </li>
-        <li>Returned by output handler:
-          <ul>
-            <li><code>X-SENDFILE</code> - Send the file referenced by this headers instead of the current response body</li>
-            <li><code>X-SENDFILE-TEMPORARY</code> - Like <code>X-SENDFILE</code>, but the file will be deleted afterwards. The file must originate from a path that has the <code>AllowFileDelete</code> flag set.</li>
-          </ul>
-        </li>
+        <li><code>X-SENDFILE-IS-ENABLED</code> - the name and version of the module, e.g. <code>mod_xsendfile/1.0</code></li>
       </ul>
+      Output handlers can check for the presence of this header to determine when X-SENDFILE is supported and what bugs/quirks may need addressing.  The module will process these response headers from the output handler if present:
+      <ul>
+        <li><code>X-SENDFILE</code> - Discard the current response body and send the file referenced by this header</li>
+        <li><code>X-SENDFILE-TEMPORARY</code> - Like <code>X-SENDFILE</code>, but the file will be deleted afterwards. The file must originate from a path that has the <code>AllowFileDelete</code> flag set.</li>
+      </ul>
+      If both headers are present in the response <code>X-SENDFILE</code> takes precedence over <code>X-SENDFILE-TEMPORARY</code>.
 
       <h3>XSendFile</h3>
 
@@ -276,7 +274,7 @@
       <ol>
         <li><code>/var/www/../pool2/file = /var/pool2/file</code> - Not within bounds of <code>/var/www</code></li>
         <li><code>/tmp/pool/../pool2/file = /tmp/pool2/file</code> - Not within bounds of <code>/tmp/pool</code></li>
-        <li><code>/tmp/pool2/../pool2/file = /tmp/pool2/file</code> - Within bounds of <code>/tmp/pool2</code>, OK</li>  
+        <li><code>/tmp/pool2/../pool2/file = /tmp/pool2/file</code> - Within bounds of <code>/tmp/pool2</code>, OK</li>
       </ol>
       <p>You still can only access paths that are whitelisted. However you have might expect a different behavior here, hence the documentation.</p>
       <p class="remark"><strong>Please note:</strong> It is recommended to always use absolute paths.</p>

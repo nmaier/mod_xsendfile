@@ -35,6 +35,7 @@
  ****/
 
 /* Version: 1.0 */
+#define AP_XSENDFILE_VERSION "1.0"
 
 #include "apr.h"
 #include "apr_lib.h"
@@ -61,6 +62,9 @@
 #define AP_XSENDFILETEMPORARY_HEADER "X-SENDFILE-TEMPORARY"
 
 #define AP_XSENDFILE_IS_ENABLED_HEADER "X-SENDFILE-IS-ENABLED"
+#ifndef AP_XSENDFILE_IS_ENABLED_HEADER_VALUE
+#define AP_XSENDFILE_IS_ENABLED_HEADER_VALUE "mod_xsendfile/" AP_XSENDFILE_VERSION
+#endif
 
 module AP_MODULE_DECLARE_DATA xsendfile_module;
 
@@ -295,13 +299,17 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
   return rv;
 }
 
-static int ap_xsendfile_add_request_header(request_rec *r) {
+static xsendfile_conf_active_t ap_xsendfile_enabled_for_request(request_rec *r) {
   xsendfile_conf_active_t enabled = ((xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module))->enabled;
   if (XSENDFILE_UNSET == enabled) {
     enabled = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->enabled;
   }
-  if (XSENDFILE_ENABLED == enabled) {
-    apr_table_setn(r->headers_in, AP_XSENDFILE_IS_ENABLED_HEADER, "1");
+  return enabled;
+}
+
+static int ap_xsendfile_add_request_header(request_rec *r) {
+  if (XSENDFILE_ENABLED == ap_xsendfile_enabled_for_request(r)) {
+    apr_table_setn(r->headers_in, AP_XSENDFILE_IS_ENABLED_HEADER, AP_XSENDFILE_IS_ENABLED_HEADER_VALUE);
   }
   return OK;
 }
@@ -645,12 +653,7 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 }
 
 static void ap_xsendfile_insert_output_filter(request_rec *r) {
-  xsendfile_conf_active_t enabled = ((xsendfile_conf_t *)ap_get_module_config(r->per_dir_config, &xsendfile_module))->enabled;
-  if (XSENDFILE_UNSET == enabled) {
-    enabled = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->enabled;
-  }
-
-  if (XSENDFILE_ENABLED != enabled) {
+  if (XSENDFILE_ENABLED != ap_xsendfile_enabled_for_request(r)) {
     return;
   }
 
