@@ -307,7 +307,7 @@ static int ap_xsendfile_add_request_header(request_rec *r) {
 }
 
 static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigade *in) {
-  request_rec *r = f->r, *sr = NULL;
+  request_rec *r = f->r;
 
   xsendfile_conf_t
     *dconf = ap_get_module_config(r->per_dir_config, &xsendfile_module),
