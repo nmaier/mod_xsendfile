@@ -300,11 +300,9 @@ static int ap_xsendfile_add_request_header(request_rec *r) {
   if (XSENDFILE_UNSET == enabled) {
     enabled = ((xsendfile_conf_t*)ap_get_module_config(r->server->module_config, &xsendfile_module))->enabled;
   }
-
-  if (XSENDFILE_ENABLED != enabled) {
-    return;
+  if (XSENDFILE_ENABLED == enabled) {
+    apr_table_setn(r->headers_in, AP_XSENDFILE_IS_ENABLED_HEADER, "1");
   }
-  apr_table_setn(r->headers_in, AP_XSENDFILE_IS_ENABLED_HEADER, "1");
   return OK;
 }
 
