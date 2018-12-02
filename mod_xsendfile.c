@@ -395,8 +395,8 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   /* as we dropped all the content this field is not valid anymore! */
   apr_table_unset(r->headers_out, "Content-Length");
   apr_table_unset(r->err_headers_out, "Content-Length");
-  apr_table_unset(r->headers_out, "Content-Encoding");
-  apr_table_unset(r->err_headers_out, "Content-Encoding");
+  // apr_table_unset(r->headers_out, "Content-Encoding");
+  // apr_table_unset(r->err_headers_out, "Content-Encoding");
 
   /* Decode header
      lighttpd does the same for X-Sendfile2, so we're compatible here
