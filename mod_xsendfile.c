@@ -17,6 +17,7 @@
  *   Nils Maier <testnutzer123@gmail.com>
  *   Ben Timby - URL decoding
  *   Jake Rhee - X-SENDFILE-TEMPORARY
+ *   Robert Saß <rs@brainedia.de> - XSendFileUnsetContentEncoding
  ****/
 
 /****
