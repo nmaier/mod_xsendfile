@@ -149,6 +149,9 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv,
   else if (!strcasecmp(cmd->cmd->name, "xsendfileunescape")) {
     conf->unescape = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
   }
+  else if (!strcasecmp(cmd->cmd->name, "xsendfileunsetcontentencoding")) {
+    conf->unsetCE = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+  }
   else {
     return apr_psprintf(
       cmd->pool,
@@ -395,8 +398,10 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   /* as we dropped all the content this field is not valid anymore! */
   apr_table_unset(r->headers_out, "Content-Length");
   apr_table_unset(r->err_headers_out, "Content-Length");
-  apr_table_unset(r->headers_out, "Content-Encoding");
-  apr_table_unset(r->err_headers_out, "Content-Encoding");
+  if (conf->unsetCE != XSENDFILE_DISABLED) {
+    apr_table_unset(r->headers_out, "Content-Encoding");
+    apr_table_unset(r->err_headers_out, "Content-Encoding");
+  }
 
   /* Decode header
      lighttpd does the same for X-Sendfile2, so we're compatible here
@@ -675,6 +680,13 @@ static const command_rec xsendfile_command_table[] = {
     NULL,
     OR_FILEINFO,
     "On|Off - Unescape/url-decode the value of the header (default: On)"
+    ),
+  AP_INIT_FLAG(
+    "XSendFileUnsetContentEncoding",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Unsets the Content-Encoding header (default: On)"
     ),
   AP_INIT_TAKE12(
     "XSendFilePath",
