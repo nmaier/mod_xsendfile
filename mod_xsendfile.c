@@ -72,6 +72,7 @@ typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t ignoreETag;
   xsendfile_conf_active_t ignoreLM;
   xsendfile_conf_active_t unescape;
+  xsendfile_conf_active_t unsetCE;
   apr_array_header_t *paths;
   apr_array_header_t *temporaryPaths;
 } xsendfile_conf_t;
@@ -86,9 +87,10 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
   xsendfile_conf_t *conf;
 
   conf = (xsendfile_conf_t *) apr_pcalloc(p, sizeof(xsendfile_conf_t));
-  conf->unescape =
+    conf->unescape =
     conf->ignoreETag =
     conf->ignoreLM =
+    conf->unsetCE =
     conf->enabled =
     XSENDFILE_UNSET;
 
@@ -114,6 +116,7 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
   XSENDFILE_CFLAG(unescape);
+  XSENDFILE_CFLAG(unsetCE);
 
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
 
