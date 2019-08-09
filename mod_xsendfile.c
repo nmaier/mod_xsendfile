@@ -17,6 +17,8 @@
  *   Nils Maier <testnutzer123@gmail.com>
  *   Ben Timby - URL decoding
  *   Jake Rhee - X-SENDFILE-TEMPORARY
+ *   Hans-Jürgen Petrich <petrich@tronic-media.com> (2019,TH,Hütt) - Added: XSendFileDisableLastModified      On/Off (default Off)
+ *                                                                   Added: XSendfileNotRemoveContentEncoding On/Off (default Off)
  ****/
 
 /****
@@ -33,7 +35,7 @@
  *     apxs2 -cia mod_xsendfile.c
  ****/
 
-/* Version: 1.0 */
+/* Version: 1.1 */
 
 #include "apr.h"
 #include "apr_lib.h"
@@ -74,6 +76,8 @@ typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t unescape;
   apr_array_header_t *paths;
   apr_array_header_t *temporaryPaths;
+  xsendfile_conf_active_t notremoveCE;
+  xsendfile_conf_active_t disableLM;
 } xsendfile_conf_t;
 
 /* structure to hold the path and permissions */
@@ -90,6 +94,8 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
     conf->ignoreETag =
     conf->ignoreLM =
     conf->enabled =
+    conf->notremoveCE =
+    conf->disableLM =
     XSENDFILE_UNSET;
 
   conf->paths = apr_array_make(p, 1, sizeof(xsendfile_path_t));
@@ -114,6 +120,8 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(ignoreETag);
   XSENDFILE_CFLAG(ignoreLM);
   XSENDFILE_CFLAG(unescape);
+  XSENDFILE_CFLAG(notremoveCE);
+  XSENDFILE_CFLAG(disableLM);
 
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
 
@@ -145,6 +153,12 @@ static const char *xsendfile_cmd_flag(cmd_parms *cmd, void *perdir_confv,
   }
   else if (!strcasecmp(cmd->cmd->name, "xsendfileignorelastmodified")) {
     conf->ignoreLM = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+  }
+  else if (!strcasecmp(cmd->cmd->name, "xsendfiledisablelastmodified")) {
+    conf->disableLM = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
+  }
+  else if (!strcasecmp(cmd->cmd->name, "xsendfilenotremovecontentencoding")) {
+    conf->notremoveCE = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
   }
   else if (!strcasecmp(cmd->cmd->name, "xsendfileunescape")) {
     conf->unescape = flag ? XSENDFILE_ENABLED: XSENDFILE_DISABLED;
@@ -395,8 +409,10 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
   /* as we dropped all the content this field is not valid anymore! */
   apr_table_unset(r->headers_out, "Content-Length");
   apr_table_unset(r->err_headers_out, "Content-Length");
-  // apr_table_unset(r->headers_out, "Content-Encoding");
-  // apr_table_unset(r->err_headers_out, "Content-Encoding");
+  if (conf->notremoveCE != XSENDFILE_ENABLED) {
+    apr_table_unset(r->headers_out, "Content-Encoding");
+    apr_table_unset(r->err_headers_out, "Content-Encoding");
+  }
 
   /* Decode header
      lighttpd does the same for X-Sendfile2, so we're compatible here
@@ -532,11 +548,12 @@ static apr_status_t ap_xsendfile_output_filter(ap_filter_t *f, apr_bucket_brigad
 
   /* some script (f?cgi) place stuff in err_headers_out */
   if (
+    conf->disableLM != XSENDFILE_ENABLED && (
     conf->ignoreLM == XSENDFILE_ENABLED
     || (
       !apr_table_get(r->headers_out, "last-modified")
       && !apr_table_get(r->err_headers_out, "last-modified")
-    )
+    ))
   ) {
     apr_table_unset(r->err_headers_out, "last-modified");
     ap_update_mtime(r, finfo.mtime);
@@ -668,6 +685,20 @@ static const command_rec xsendfile_command_table[] = {
     NULL,
     OR_FILEINFO,
     "On|Off - Ignore script provided Last-Modified headers (default: Off)"
+    ),
+  AP_INIT_FLAG(
+    "XSendFileDisableLastModified",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Do not send Last-Modified headers at all (default: Off)"
+    ),
+  AP_INIT_FLAG(
+    "XSendfileNotRemoveContentEncoding",
+    xsendfile_cmd_flag,
+    NULL,
+    OR_FILEINFO,
+    "On|Off - Do not remove existings Content-Encoding headers (default: Off)"
     ),
   AP_INIT_FLAG(
     "XSendFileUnescape",
