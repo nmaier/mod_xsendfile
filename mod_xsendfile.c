@@ -72,6 +72,7 @@ typedef struct xsendfile_conf_t {
   xsendfile_conf_active_t ignoreETag;
   xsendfile_conf_active_t ignoreLM;
   xsendfile_conf_active_t unescape;
+  const char *rootpath;
   apr_array_header_t *paths;
   apr_array_header_t *temporaryPaths;
 } xsendfile_conf_t;
@@ -92,6 +93,8 @@ static xsendfile_conf_t *xsendfile_config_create(apr_pool_t *p) {
     conf->enabled =
     XSENDFILE_UNSET;
 
+  // optional settings
+  conf->rootpath = NULL;
   conf->paths = apr_array_make(p, 1, sizeof(xsendfile_path_t));
 
   return conf;
@@ -102,6 +105,7 @@ static void *xsendfile_config_server_create(apr_pool_t *p, server_rec *s) {
 }
 
 #define XSENDFILE_CFLAG(x) conf->x = overrides->x != XSENDFILE_UNSET ? overrides->x : base->x
+#define XSENDFILE_CPATH(x) conf->x = overrides->x != NULL ? overrides->x : base->x
 
 static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv) {
   xsendfile_conf_t *base = (xsendfile_conf_t *)basev;
@@ -115,6 +119,8 @@ static void *xsendfile_config_merge(apr_pool_t *p, void *basev, void *overridesv
   XSENDFILE_CFLAG(ignoreLM);
   XSENDFILE_CFLAG(unescape);
 
+  // optional settings
+  XSENDFILE_CPATH(rootpath);
   conf->paths = apr_array_append(p, overrides->paths, base->paths);
 
   return (void*)conf;
@@ -175,6 +181,17 @@ static const char *xsendfile_cmd_path(cmd_parms *cmd, void *pdc,
   return NULL;
 }
 
+static const char *xsendfile_root_path(cmd_parms *cmd, void *pdc,
+                                        const char *path,
+                                        const char *allowFileDelete) {
+    xsendfile_conf_t *conf = (xsendfile_conf_t*)ap_get_module_config(
+            cmd->server->module_config,
+            &xsendfile_module
+    );
+    conf->rootpath = apr_pstrdup(cmd->pool, path);
+    return NULL;
+}
+
 /*
   little helper function to get the original request path
   code borrowed from request.c and util_script.c
@@ -232,6 +249,13 @@ static const char *ap_xsendfile_get_orginal_path(request_rec *rec) {
 }
 
 /*
+ Root path based conf or environ.
+*/
+static const char *ap_xsendfile_get_root_path(xsendfile_conf_t *conf, request_rec *rec) {
+    return conf->rootpath != NULL ? conf->rootpath : ap_xsendfile_get_orginal_path(rec);
+}
+
+/*
   little helper function to build the file path if available
 */
 static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
@@ -246,7 +270,7 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
 
   patharr = conf->paths;
   if (!shouldDeleteFile) {
-    const char *root = ap_xsendfile_get_orginal_path(r);
+    const char *root = ap_xsendfile_get_root_path(conf, r);
     if (root) {
       xsendfile_path_t *newpath;
 
@@ -683,6 +707,13 @@ static const command_rec xsendfile_command_table[] = {
     RSRC_CONF|ACCESS_CONF,
     "Allow to serve files from that Path. Must be absolute"
     ),
+  AP_INIT_TAKE12(
+      "XSendFilePathRoot",
+      xsendfile_root_path,
+      NULL,
+      RSRC_CONF|ACCESS_CONF,
+      "Allow to serve files relative that root."
+  ),
   { NULL }
 };
 static void xsendfile_register_hooks(apr_pool_t *p) {
