@@ -716,7 +716,7 @@ static const command_rec xsendfile_command_table[] = {
     "Allow to serve files from that Path. Must be absolute"
     ),
   AP_INIT_TAKE12(
-      "XSendFilePathRoot",
+      "XSendFileRootPath",
       xsendfile_root_path,
       NULL,
       RSRC_CONF|ACCESS_CONF,
