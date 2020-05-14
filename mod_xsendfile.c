@@ -307,7 +307,15 @@ static apr_status_t ap_xsendfile_get_filepath(request_rec *r,
       APR_FILEPATH_TRUENAME | APR_FILEPATH_NOTABOVEROOT,
       r->pool
     )) == OK) {
-      break;
+        // The path is only valid if it exists.
+        // If it doesn't continue until you find a valid path on the white-list.
+        apr_finfo_t info;
+        rv = apr_stat(&info, *path, APR_FINFO_CSIZE, r->pool);
+        if (rv == OK) {
+            break;
+        } else {
+            continue;
+        }
     }
   }
   if (rv != OK) {
